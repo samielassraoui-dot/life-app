@@ -1,6 +1,7 @@
 import * as store from '../store.js';
 import * as sync from '../sync.js';
 import { AREAS } from '../areas.js';
+import * as body from '../body.js';
 import { h, icon, iso, weekDays, isoWeek, fmtLong, WD_SHORT, MONTHS, addDays, weekStart } from '../ui.js';
 
 function greeting() {
@@ -18,6 +19,28 @@ function reviewText(now = new Date()) {
   const days = Math.round((new Date(due.getFullYear(), due.getMonth(), due.getDate()) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
   const when = days === 0 ? 'heute um 20:00' : days === 1 ? 'morgen um 20:00' : `in ${days} Tagen · Sonntag 20:00`;
   return { title: 'Sonntags-Review', sub: when, now: false };
+}
+
+// Wochenfortschritt pro Bereich (weitere Bereiche folgen in den nächsten Stufen)
+const SCORES = { koerper: () => body.weekScore() };
+
+// „Als Nächstes“: nächste Mahlzeit und überfällige Routinen – gegen das Vergessen.
+function nextUp(today) {
+  const meal = body.nextMeal(today);
+  const nowT = new Date().toTimeString().slice(0, 5);
+  const open = body.routines().filter((r) => r.zeit && r.zeit <= nowT && !body.routineDone(today, r.id));
+  if (!meal && !open.length) return null;
+  return h('a.card.next-up.a-koerper', { href: '#/koerper' },
+    h('p.label', 'Als Nächstes'),
+    meal && h('div.nu-row',
+      h('span.time', meal.zeit || '–'),
+      h('span', h('b', meal.name), h('span.small.muted.block', `${Math.round(meal.kcal)} kcal · ${Math.round(meal.protein)} g Protein`)),
+    ),
+    open.length > 0 && h('div.nu-row',
+      h('span.time', open.length),
+      h('span', h('b', open.length === 1 ? 'Routine offen' : 'Routinen offen'), h('span.small.muted.block', open.map((r) => r.name).join(', '))),
+    ),
+  );
 }
 
 export function render() {
@@ -50,12 +73,17 @@ export function render() {
       ),
     ),
 
+    nextUp(today),
+
     h('div.areas',
-      AREAS.map((a) => h(`a.card.area.a-${a.id}`, { href: `#/${a.id}` },
-        h('div.area-top', h('span.area-icon', icon(a.id, 20)), h('span.area-name', a.tab)),
-        h('div.bar', h('i', { style: { width: '0%' } })),
-        h('p.small.muted', `Fortschritt ab Stufe ${a.stage}`),
-      )),
+      AREAS.map((a) => {
+        const pct = SCORES[a.id] ? SCORES[a.id]() : null;
+        return h(`a.card.area.a-${a.id}`, { href: `#/${a.id}` },
+          h('div.area-top', h('span.area-icon', icon(a.id, 20)), h('span.area-name', a.tab)),
+          h('div.bar', h('i', { style: { width: `${pct || 0}%` } })),
+          h('p.small.muted', pct == null ? `Fortschritt ab Stufe ${a.stage}` : `${pct} % diese Woche`),
+        );
+      }),
     ),
 
     h(`section.card.review${review.now ? '.due' : ''}`,

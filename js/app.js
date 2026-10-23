@@ -6,21 +6,29 @@ import { h, icon, toast } from './ui.js';
 import * as dashboard from './views/dashboard.js';
 import * as area from './views/area.js';
 import * as settings from './views/settings.js';
+import * as koerper from './views/koerper.js';
+import { seedDefaults } from './body.js';
 
 const TABS = [{ id: 'heute', tab: 'Heute', icon: 'home' }, ...AREAS.map((a) => ({ id: a.id, tab: a.tab, icon: a.id }))];
 
 let main, tabbar, syncBtn;
 
 function route() {
-  return location.hash.replace(/^#\/?/, '').split('/')[0] || 'heute';
+  const [r, sub] = location.hash.replace(/^#\/?/, '').split('/');
+  return { r: r || 'heute', sub: sub || '' };
 }
 
+let lastRoute = '';
 function render() {
-  const r = route();
+  const { r, sub } = route();
   let view;
   if (r === 'einstellungen') view = settings.render(render);
+  else if (r === 'koerper') view = koerper.render(sub, render);
   else if (AREAS.some((a) => a.id === r)) view = area.render(r);
   else view = dashboard.render();
+  // Einblenden nur beim Seitenwechsel, nicht bei jedem Abhaken
+  if (`${r}/${sub}` !== lastRoute) view.classList.add('enter');
+  lastRoute = `${r}/${sub}`;
   main.replaceChildren(view);
   document.body.dataset.area = r;
   for (const a of tabbar.querySelectorAll('a')) a.classList.toggle('active', a.dataset.id === r);
@@ -72,6 +80,7 @@ async function start() {
     document.getElementById('app').textContent = 'Der Speicher dieses Browsers ist nicht verfügbar (privater Modus?).';
     return;
   }
+  seedDefaults();
   shell();
   render();
   paintSync();

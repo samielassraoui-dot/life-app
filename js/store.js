@@ -69,6 +69,15 @@ export function set(key, v) {
   emit({ local: true });
 }
 
+// Startwert, der jede echte Änderung verliert (t = 1) – so tauchen gelöschte
+// Standard-Einträge nicht wieder auf, wenn ein zweites Gerät sie neu anlegt.
+export function setDefault(key, v) {
+  if (mem.has(key)) return;
+  const rec = { v, t: 1 };
+  mem.set(key, rec);
+  writeMany([[key, rec]]);
+}
+
 export function del(key) {
   const r = mem.get(key);
   if (!r || r.d) return;

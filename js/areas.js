@@ -6,6 +6,7 @@ export const AREAS = [
     tab: 'Körper',
     goal: 'Muskelaufbau von 70 auf 80–85 kg, definiert bis Sommer 2027',
     stage: 2,
+    ready: true,
     coming: [
       'Mahlzeiten des Tages mit „Gegessen“ / „Nicht gegessen“',
       'Tagessummen für Kalorien, Protein, Kohlenhydrate, Fett',
