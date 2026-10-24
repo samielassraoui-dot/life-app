@@ -135,11 +135,11 @@ function contactLines(monday) {
   const lines = [];
   const seen = pp.weekContacts(monday);
   if (seen.length) lines.push(`- Kontakte: ${seen.map((x) => `${x.p.name} (${WD_SHORT[fromIso(x.d).getDay()]})`).join(', ')}`);
-  const parts = pp.weekParts(monday);
-  if (parts.length) lines.push(`- Im Rhythmus: ${parts[0].done}/${parts[0].total}`);
+  const plan = pp.weekPlan(monday);
+  if (plan.total) lines.push(`- Wochenplan: ${plan.done}/${plan.total} erledigt`);
   const all = pp.people();
-  const due = all.filter((p) => pp.status(p).state === 'faellig').map((p) => p.name);
-  if (due.length) lines.push(`- Schon eine Weile her: ${due.join(', ')}`);
+  const due = plan.items.filter((x) => x.state !== 'erledigt').map((x) => x.p.name);
+  if (due.length) lines.push(`- Noch offen: ${due.join(', ')}`);
   const gem = all.filter((p) => pp.flag('gemeldet', p.id)).map((p) => p.name);
   if (gem.length) lines.push(`- Gemeldet bei: ${gem.join(', ')}`);
   const tr = all.filter((p) => pp.flag('treffen', p.id)).map((p) => p.name);

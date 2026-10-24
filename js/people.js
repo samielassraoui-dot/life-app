@@ -1,7 +1,7 @@
 // Daten für den Bereich Contact.
 //
 // Schlüssel im Speicher:
-//   person:<id>          {name, ring 1–4, rhythm (Tage, 0 = ohne), birthday 'MM-TT' oder 'JJJJ-MM-TT', notes}
+//   person:<id>          {name, ring 1–4, prio hoch|normal|warte, rhythm (Tage, 0 = ohne), birthday 'MM-TT' oder 'JJJJ-MM-TT', notes}
 //   clog:<id>:<datum>    Kontakt an diesem Tag (letzter Kontakt = neuestes Datum)
 //   gemeldet:<id>        Haken „Ich habe mich gemeldet“
 //   treffen:<id>         Haken „Treffen geplant“
@@ -20,7 +20,21 @@ export const RHYTHMS = [
   { days: 0, name: 'ohne festen Rhythmus' },
 ];
 
-export const rhythmName = (d) => (RHYTHMS.find((r) => r.days === d) || RHYTHMS[4]).name;
+export function rhythmName(d) {
+  const r = RHYTHMS.find((x) => x.days === d);
+  return r ? r.name : `alle ${d} Tage`;
+}
+
+// Vorschlag beim Anlegen – pro Person jederzeit änderbar.
+export const RING_RHYTHM = { 1: 7, 2: 14, 3: 30, 4: 90 };
+
+export const PRIOS = [
+  { id: 'hoch', name: 'Hoch', hint: 'immer in „Diese Woche“' },
+  { id: 'normal', name: 'Normal', hint: 'erscheint, wenn fällig' },
+  { id: 'warte', name: 'Warteliste', hint: 'taucht erst auf, wenn du hochstufst' },
+];
+export const prio = (p) => p.prio || 'normal';
+export const prioName = (id) => (PRIOS.find((x) => x.id === id) || PRIOS[1]).name;
 
 export const ringName = (n) => store.get(`ring:${n}`, RING_DEFAULTS[n]);
 export const setRingName = (n, name) => store.set(`ring:${n}`, name || RING_DEFAULTS[n]);
@@ -145,14 +159,71 @@ export function upcomingBirthdays(days = 30) {
     .sort((a, b) => a.b.inDays - b.b.inDays);
 }
 
-// ---------- Woche ----------
+// ---------- Wochenplan ----------
+
+// Wer ist in dieser Woche „dran“? Hoch: immer. Normal: wenn bis Sonntag fällig
+// (oder noch nie Kontakt). Warteliste: nie. Erledigt = Kontakt in dieser Woche.
+export function weekPlan(monday) {
+  const days = Array.from({ length: 7 }, (_, i) => iso(addDays(monday, i)));
+  const before = iso(addDays(monday, -1));
+  const sunday = days[6];
+  const today = iso();
+  const items = [];
+  const extra = [];
+  for (const p of people()) {
+    const contactDay = days.find((d) => hadContactOn(p.id, d));
+    const last = lastContact(p.id, before);
+    const due = p.rhythm && last ? iso(addDays(fromIso(last), p.rhythm)) : null;
+    const pr = prio(p);
+    const planned = pr === 'hoch' || (pr === 'normal' && p.rhythm && (!last || due <= sunday));
+    if (!planned) {
+      if (contactDay) extra.push({ p, state: 'erledigt', day: contactDay });
+      continue;
+    }
+    let state = 'dran';
+    if (contactDay) state = 'erledigt';
+    else if (p.rhythm && (!last || due < (today < sunday ? today : sunday))) state = 'ueberfaellig';
+    items.push({ p, state, due, last, day: contactDay });
+  }
+  const order = { ueberfaellig: 0, dran: 1, erledigt: 2 };
+  items.sort((a, b) => order[a.state] - order[b.state] || (a.due || '').localeCompare(b.due || '') || a.p.name.localeCompare(b.p.name, 'de'));
+  return { items, extra, total: items.length, done: items.filter((x) => x.state === 'erledigt').length };
+}
+
+// ---------- Rückblick ----------
+
+export function ringStats() {
+  return [1, 2, 3, 4].map((n) => {
+    const list = people().filter((p) => (p.ring || 4) === n && p.rhythm);
+    const ok = list.filter((p) => ['ok', 'bald'].includes(status(p).state)).length;
+    return { n, ok, total: list.length };
+  });
+}
+
+export function longestWithout(limit = 8) {
+  return people()
+    .map((p) => ({ p, since: status(p).since }))
+    .sort((a, b) => (b.since ?? 1e9) - (a.since ?? 1e9))
+    .slice(0, limit);
+}
+
+// Alle Kontakte (neueste zuerst) ab einem Datum.
+export function contactLog(from) {
+  const names = Object.fromEntries(people().map((p) => [p.id, p]));
+  return store.list('clog:')
+    .map(({ key }) => {
+      const [, id, d] = key.split(':');
+      return { p: names[id], d };
+    })
+    .filter((x) => x.p && x.d >= from)
+    .sort((a, b) => b.d.localeCompare(a.d));
+}
+
+// ---------- Woche (Review, Export) ----------
 
 export function weekParts(monday) {
-  const end = iso(addDays(monday, 6));
-  const at = end < iso() ? end : iso();
-  const withRhythm = people().filter((p) => p.rhythm);
-  const inRhythm = withRhythm.filter((p) => ['ok', 'bald'].includes(status(p, at).state)).length;
-  return withRhythm.length ? [{ label: 'Im Rhythmus', done: inRhythm, total: withRhythm.length }] : [];
+  const plan = weekPlan(monday);
+  return plan.total ? [{ label: 'Kontakte im Plan', done: plan.done, total: plan.total }] : [];
 }
 
 export function weekContacts(monday) {
