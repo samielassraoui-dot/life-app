@@ -1,11 +1,11 @@
 // Daten für den Bereich Contact.
 //
 // Schlüssel im Speicher:
-//   person:<id>          {name, ring 0–4 (0 = Partner), art treffen|telefonat|date, prio hoch|normal|warte, rhythm (Tage, 0 = ohne), birthday 'MM-TT' oder 'JJJJ-MM-TT', notes}
-//   clog:<id>:<datum>    Kontakt an diesem Tag (letzter Kontakt = neuestes Datum)
-//   gemeldet:<id>        Haken „Ich habe mich gemeldet“
-//   treffen:<id>         Haken „Treffen geplant“
-//   ring:<1–4>           eigener Name des Rings
+//   person:<id>          {name, ring 0–4 (0 = Partner), art (Standardkontakt), prio hoch|normal|warte,
+//                         rhythm (Tage, 0 = ohne), birthday 'MM-TT' oder 'JJJJ-MM-TT', notes}
+//   clog:<id>:<datum>    Kontakt an diesem Tag: {art, note} (ältere Einträge: true)
+//   cplan:<id>           geplanter Kontakt {date, art, note}
+//   ring:<0–4>           eigener Name des Rings
 
 import * as store from './store.js';
 import { iso, fromIso, addDays, uid } from './ui.js';
@@ -13,13 +13,18 @@ import { iso, fromIso, addDays, uid } from './ui.js';
 export const RING_DEFAULTS = { 0: 'Partner', 1: 'Innerer Kreis', 2: 'Enge Freunde', 3: 'Freunde', 4: 'Bekannte & Netzwerk' };
 export const ringOf = (p) => p.ring ?? 4;
 
-// Was zählt bei dieser Person als Kontakt? Bestimmt die Beschriftung der Knöpfe.
+// Kontaktarten. Ältere Werte (treffen, telefonat) werden übersetzt.
 export const KINDS = {
-  treffen: { name: 'Treffen', done: 'Getroffen', plan: 'Treffen geplant', past: 'Getroffen', icon: 'users' },
-  telefonat: { name: 'Telefonat', done: 'Telefoniert', plan: 'Telefonat geplant', past: 'Telefoniert', icon: 'phone' },
-  date: { name: 'Date Night', done: 'Date Night', plan: 'Date geplant', past: 'Date Night', icon: 'heart' },
+  telefoniert: { name: 'Telefoniert', icon: 'phone' },
+  getroffen: { name: 'Getroffen', icon: 'users' },
+  geschrieben: { name: 'Geschrieben', icon: 'chat' },
+  date: { name: 'Date Night', icon: 'heart' },
 };
-export const kind = (p) => KINDS[p.art] || KINDS.treffen;
+const LEGACY = { treffen: 'getroffen', telefonat: 'telefoniert' };
+export const normKind = (a) => (KINDS[a] ? a : LEGACY[a] || 'getroffen');
+// Standardkontakt einer Person (für „Wischen nach rechts“)
+export const defaultKind = (p) => normKind(p.art || (ringOf(p) === 0 ? 'date' : 'getroffen'));
+export const kindName = (a) => KINDS[normKind(a)].name;
 
 export const RHYTHMS = [
   { days: 7, name: 'wöchentlich' },
@@ -33,17 +38,17 @@ export function rhythmName(d) {
   const r = RHYTHMS.find((x) => x.days === d);
   return r ? r.name : `alle ${d} Tage`;
 }
+export const rhythmShort = (d) => (d ? (d === 7 ? 'wöchentlich' : `alle ${d} Tage`) : 'ohne Rhythmus');
 
 // Vorschlag beim Anlegen – pro Person jederzeit änderbar.
 export const RING_RHYTHM = { 0: 7, 1: 7, 2: 14, 3: 30, 4: 90 };
 
 export const PRIOS = [
-  { id: 'hoch', name: 'Hoch', hint: 'immer in „Diese Woche“' },
-  { id: 'normal', name: 'Normal', hint: 'erscheint, wenn fällig' },
-  { id: 'warte', name: 'Warteliste', hint: 'taucht erst auf, wenn du hochstufst' },
+  { id: 'hoch', name: 'Hoch', hint: 'erscheint jede Woche unter „Fällig“, bis ihr Kontakt hattet' },
+  { id: 'normal', name: 'Normal', hint: 'erscheint, wenn der Kontakt fällig wird' },
+  { id: 'warte', name: 'Warteliste', hint: 'taucht in „Diese Woche“ nicht auf' },
 ];
 export const prio = (p) => p.prio || 'normal';
-export const prioName = (id) => (PRIOS.find((x) => x.id === id) || PRIOS[1]).name;
 
 export const ringName = (n) => store.get(`ring:${n}`, RING_DEFAULTS[n]);
 export const setRingName = (n, name) => store.set(`ring:${n}`, name || RING_DEFAULTS[n]);
@@ -70,17 +75,25 @@ export function savePerson(id, data) {
 export function deletePerson(id) {
   store.del(`person:${id}`);
   for (const { key } of store.list(`clog:${id}:`)) store.del(key);
-  store.del(`gemeldet:${id}`);
-  store.del(`treffen:${id}`);
+  store.del(`cplan:${id}`);
 }
 
 export const initials = (name) => name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
 
 // ---------- Kontakte ----------
 
-export function contactDates(id) {
-  return store.list(`clog:${id}:`).map(({ key }) => key.split(':')[2]).sort();
+// Alle Kontakte einer Person, älteste zuerst: [{date, art, note}]
+// Ältere Einträge (ohne Kontaktart) zählen als Standardkontakt der Person.
+const entryKind = (v, p) => (v?.art ? normKind(v.art) : p ? defaultKind(p) : 'getroffen');
+
+export function contacts(id) {
+  const p = person(id);
+  return store.list(`clog:${id}:`)
+    .map(({ key, v }) => ({ date: key.split(':')[2], art: entryKind(v, p), note: v?.note || '' }))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
+
+export const contactDates = (id) => contacts(id).map((c) => c.date);
 
 // Letzter Kontakt bis einschließlich „bis“ (Standard: heute).
 export function lastContact(id, until = iso()) {
@@ -88,47 +101,59 @@ export function lastContact(id, until = iso()) {
   return d.length ? d[d.length - 1] : null;
 }
 
-export function toggleContact(id, date = iso()) {
-  const k = `clog:${id}:${date}`;
-  if (store.get(k)) store.del(k);
-  else store.set(k, true);
-}
-
 export const hadContactOn = (id, date) => !!store.get(`clog:${id}:${date}`);
 
-export const flag = (kind, id) => !!store.get(`${kind}:${id}`);
-
-export function toggleFlag(kind, id) {
-  if (flag(kind, id)) store.del(`${kind}:${id}`);
-  else store.set(`${kind}:${id}`, true);
+// Kontakt eintragen. Ein geplanter Kontakt bis zu diesem Datum gilt damit als erledigt.
+export function logContact(id, { date = iso(), art, note = '' } = {}) {
+  store.set(`clog:${id}:${date}`, { art: normKind(art), note });
+  const pl = plan(id);
+  if (pl && pl.date <= date) store.del(`cplan:${id}`);
 }
+
+export const removeContact = (id, date) => store.del(`clog:${id}:${date}`);
+
+export const plan = (id) => store.get(`cplan:${id}`, null);
+export const setPlan = (id, data) => store.set(`cplan:${id}`, { ...data, art: normKind(data.art) });
+export const clearPlan = (id) => store.del(`cplan:${id}`);
 
 const daysBetween = (a, b) => Math.round((fromIso(b) - fromIso(a)) / 86400000);
 
-// Status gegenüber dem Rhythmus: ok / bald / faellig (+ Tage seit Kontakt)
+// ---------- Status (zentral) ----------
+//
+// im_rhythmus  – alles gut (grün)
+// bald_faellig – ab 80 % des Intervalls (gelb)
+// ueberfaellig – Intervall überschritten oder noch nie Kontakt (rot)
+// geplant      – zukünftiger Kontakt geplant; zählt nicht als überfällig (blau)
+export const STATES = {
+  im_rhythmus: 'Im Rhythmus',
+  bald_faellig: 'Bald fällig',
+  ueberfaellig: 'Überfällig',
+  geplant: 'Geplant',
+};
+
 export function status(p, at = iso()) {
   const last = lastContact(p.id, at);
   const since = last ? daysBetween(last, at) : null;
-  if (!p.rhythm) return { state: 'frei', since, last };
-  if (since == null) return { state: 'faellig', since, last, over: null };
-  const left = p.rhythm - since;
-  if (left < 0) return { state: 'faellig', since, last, over: -left };
-  if (left <= 3) return { state: 'bald', since, last, left };
-  return { state: 'ok', since, last, left };
+  const pl = plan(p.id);
+  const base = { since, last, plan: pl && pl.date >= at ? pl : null };
+  if (base.plan) return { ...base, state: 'geplant' };
+  if (!p.rhythm) return { ...base, state: 'im_rhythmus' };
+  if (since == null || since > p.rhythm) return { ...base, state: 'ueberfaellig' };
+  if (since >= p.rhythm * 0.8) return { ...base, state: 'bald_faellig' };
+  return { ...base, state: 'im_rhythmus' };
 }
 
-// z. B. „Telefoniert vor 3 Tagen“ / „Noch kein Kontakt eingetragen“
-export function lastText(p, since = status(p).since) {
-  return since == null ? 'Noch kein Kontakt eingetragen' : `${kind(p).past} ${sinceText(since)}`;
+// „vor 3 Tagen · alle 14 Tage“
+export function lineText(p, s = status(p)) {
+  const when = s.since == null ? 'noch kein Kontakt' : sinceText(s.since);
+  return `${when} · ${rhythmShort(p.rhythm)}`;
 }
 
 export function sinceText(since) {
-  if (since == null) return 'noch kein Kontakt eingetragen';
+  if (since == null) return 'noch kein Kontakt';
   if (since === 0) return 'heute';
   if (since === 1) return 'gestern';
-  if (since < 14) return `vor ${since} Tagen`;
-  if (since < 60) return `vor ${Math.round(since / 7)} Wochen`;
-  return `vor ${Math.round(since / 30)} Monaten`;
+  return `vor ${since} Tagen`;
 }
 
 // ---------- Geburtstage ----------
@@ -173,35 +198,48 @@ export function upcomingBirthdays(days = 30) {
     .sort((a, b) => a.b.inDays - b.b.inDays);
 }
 
-// ---------- Wochenplan ----------
+// ---------- Diese Woche ----------
 
-// Wer ist in dieser Woche „dran“? Hoch: immer. Normal: wenn bis Sonntag fällig
-// (oder noch nie Kontakt). Warteliste: nie. Erledigt = Kontakt in dieser Woche.
+// Fällig: überfällig oder bald fällig (Prio „Hoch“: immer, solange diese Woche kein Kontakt war).
+// Geplant: zukünftiger Kontakt geplant. Erledigt: Kontakt in dieser Woche. Warteliste: nie fällig.
+export function thisWeek(monday) {
+  const days = Array.from({ length: 7 }, (_, i) => iso(addDays(monday, i)));
+  const due = [];
+  const planned = [];
+  const done = [];
+  for (const p of people()) {
+    const s = status(p);
+    const day = [...days].reverse().find((d) => hadContactOn(p.id, d));
+    if (day) done.push({ p, s, day });
+    if (s.state === 'geplant') planned.push({ p, s });
+    else if (prio(p) !== 'warte' && !day && (s.state === 'ueberfaellig' || s.state === 'bald_faellig' || prio(p) === 'hoch')) due.push({ p, s });
+  }
+  const rank = { ueberfaellig: 0, bald_faellig: 1, im_rhythmus: 2 };
+  due.sort((a, b) => rank[a.s.state] - rank[b.s.state] || (b.s.since ?? 1e9) - (a.s.since ?? 1e9));
+  planned.sort((a, b) => a.s.plan.date.localeCompare(b.s.plan.date));
+  done.sort((a, b) => b.day.localeCompare(a.day));
+  return { due, planned, done };
+}
+
+// Für Rückblick und Wochenauswertung: Wer war in einer (vergangenen) Woche „dran“
+// und wer davon hatte Kontakt? Berechnet aus dem Stand zu Wochenbeginn.
 export function weekPlan(monday) {
   const days = Array.from({ length: 7 }, (_, i) => iso(addDays(monday, i)));
   const before = iso(addDays(monday, -1));
   const sunday = days[6];
-  const today = iso();
-  const items = [];
-  const extra = [];
+  let total = 0;
+  let done = 0;
   for (const p of people()) {
-    const contactDay = days.find((d) => hadContactOn(p.id, d));
+    if (prio(p) === 'warte') continue;
     const last = lastContact(p.id, before);
     const due = p.rhythm && last ? iso(addDays(fromIso(last), p.rhythm)) : null;
-    const pr = prio(p);
-    const planned = pr === 'hoch' || (pr === 'normal' && p.rhythm && (!last || due <= sunday));
-    if (!planned) {
-      if (contactDay) extra.push({ p, state: 'erledigt', day: contactDay });
-      continue;
-    }
-    let state = 'dran';
-    if (contactDay) state = 'erledigt';
-    else if (p.rhythm && (!last || due < (today < sunday ? today : sunday))) state = 'ueberfaellig';
-    items.push({ p, state, due, last, day: contactDay });
+    const contact = days.some((d) => hadContactOn(p.id, d));
+    const inPlan = prio(p) === 'hoch' || (p.rhythm && (!last || due <= sunday));
+    if (!inPlan) continue;
+    total++;
+    if (contact) done++;
   }
-  const order = { ueberfaellig: 0, dran: 1, erledigt: 2 };
-  items.sort((a, b) => order[a.state] - order[b.state] || (a.due || '').localeCompare(b.due || '') || a.p.name.localeCompare(b.p.name, 'de'));
-  return { items, extra, total: items.length, done: items.filter((x) => x.state === 'erledigt').length };
+  return { total, done };
 }
 
 // ---------- Rückblick ----------
@@ -210,7 +248,7 @@ export function ringStats() {
   const all = people();
   return [0, 1, 2, 3, 4].filter((n) => n > 0 || all.some((p) => ringOf(p) === 0)).map((n) => {
     const list = all.filter((p) => ringOf(p) === n && p.rhythm);
-    const ok = list.filter((p) => ['ok', 'bald'].includes(status(p).state)).length;
+    const ok = list.filter((p) => status(p).state !== 'ueberfaellig').length;
     return { n, ok, total: list.length };
   });
 }
@@ -222,23 +260,28 @@ export function longestWithout(limit = 8) {
     .slice(0, limit);
 }
 
-// Alle Kontakte (neueste zuerst) ab einem Datum.
-export function contactLog(from) {
+// Alle Kontakte (neueste zuerst) ab einem Datum: [{p, date, art, note}]
+export function contactLog(from = '0000') {
   const names = Object.fromEntries(people().map((p) => [p.id, p]));
   return store.list('clog:')
-    .map(({ key }) => {
-      const [, id, d] = key.split(':');
-      return { p: names[id], d };
+    .map(({ key, v }) => {
+      const [, id, date] = key.split(':');
+      return { p: names[id], date, art: entryKind(v, names[id]), note: v?.note || '' };
     })
-    .filter((x) => x.p && x.d >= from)
-    .sort((a, b) => b.d.localeCompare(a.d));
+    .filter((x) => x.p && x.date >= from)
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export function firstContactDate() {
+  const log = contactLog();
+  return log.length ? log[log.length - 1].date : null;
 }
 
 // ---------- Woche (Review, Export) ----------
 
 export function weekParts(monday) {
-  const plan = weekPlan(monday);
-  return plan.total ? [{ label: 'Kontakte im Plan', done: plan.done, total: plan.total }] : [];
+  const wp = weekPlan(monday);
+  return wp.total ? [{ label: 'Kontakte im Plan', done: wp.done, total: wp.total }] : [];
 }
 
 export function weekContacts(monday) {

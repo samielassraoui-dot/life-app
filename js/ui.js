@@ -77,16 +77,25 @@ export function icon(name, size = 24) {
 }
 
 let toastTimer;
-export function toast(msg, kind = '') {
+// action (optional): {label, fn} – z. B. „Rückgängig“
+export function toast(msg, kind = '', action = null) {
   let el = document.getElementById('toast');
   if (!el) {
     el = h('div', { id: 'toast', role: 'status' });
     document.body.append(el);
   }
-  el.textContent = msg;
-  el.className = `show ${kind}`;
+  el.replaceChildren(h('span', msg));
+  if (action) {
+    el.append(h('button.toast-btn', {
+      onclick: () => {
+        el.className = kind;
+        action.fn();
+      },
+    }, action.label));
+  }
+  el.className = `show ${kind}${action ? ' has-action' : ''}`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.className = kind), kind === 'error' ? 5000 : 2400);
+  toastTimer = setTimeout(() => (el.className = kind), kind === 'error' || action ? 5000 : 2400);
 }
 
 // ---------- Datum ----------

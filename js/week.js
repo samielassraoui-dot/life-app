@@ -133,17 +133,16 @@ function sinnLines(monday) {
 
 function contactLines(monday) {
   const lines = [];
-  const seen = pp.weekContacts(monday);
-  if (seen.length) lines.push(`- Kontakte: ${seen.map((x) => `${x.p.name} (${WD_SHORT[fromIso(x.d).getDay()]})`).join(', ')}`);
-  const plan = pp.weekPlan(monday);
-  if (plan.total) lines.push(`- Wochenplan: ${plan.done}/${plan.total} erledigt`);
-  const all = pp.people();
-  const due = plan.items.filter((x) => x.state !== 'erledigt').map((x) => x.p.name);
-  if (due.length) lines.push(`- Noch offen: ${due.join(', ')}`);
-  const gem = all.filter((p) => pp.flag('gemeldet', p.id)).map((p) => p.name);
-  if (gem.length) lines.push(`- Gemeldet bei: ${gem.join(', ')}`);
-  const tr = all.filter((p) => pp.flag('treffen', p.id)).map((p) => p.name);
-  if (tr.length) lines.push(`- Treffen geplant mit: ${tr.join(', ')}`);
+  const end = iso(addDays(monday, 6));
+  const seen = pp.contactLog(iso(monday)).filter((x) => x.date <= end).reverse();
+  if (seen.length) lines.push(`- Kontakte: ${seen.map((x) => `${x.p.name} (${pp.kindName(x.art)}, ${WD_SHORT[fromIso(x.date).getDay()]})`).join(', ')}`);
+  const wp = pp.weekPlan(monday);
+  if (wp.total) lines.push(`- Wochenplan: ${wp.done}/${wp.total} erledigt`);
+  const all = pp.people().map((p) => ({ p, s: pp.status(p) }));
+  const over = all.filter((x) => x.s.state === 'ueberfaellig' && pp.prio(x.p) !== 'warte').map((x) => x.p.name);
+  if (over.length) lines.push(`- Überfällig: ${over.join(', ')}`);
+  const planned = all.filter((x) => x.s.state === 'geplant').map((x) => `${x.p.name} (${pp.kindName(x.s.plan.art)} ${fmtShort(fromIso(x.s.plan.date))})`);
+  if (planned.length) lines.push(`- Geplant: ${planned.join(', ')}`);
   const bd = pp.upcomingBirthdays(14).map(({ p, b }) => `${p.name} (${fmtShort(b.date)})`);
   if (bd.length) lines.push(`- Geburtstage in den nächsten 2 Wochen: ${bd.join(', ')}`);
   return lines;
