@@ -1,7 +1,7 @@
 // Daten für den Bereich Contact.
 //
 // Schlüssel im Speicher:
-//   person:<id>          {name, ring 1–4, prio hoch|normal|warte, rhythm (Tage, 0 = ohne), birthday 'MM-TT' oder 'JJJJ-MM-TT', notes}
+//   person:<id>          {name, ring 0–4 (0 = Partner), art treffen|telefonat|date, prio hoch|normal|warte, rhythm (Tage, 0 = ohne), birthday 'MM-TT' oder 'JJJJ-MM-TT', notes}
 //   clog:<id>:<datum>    Kontakt an diesem Tag (letzter Kontakt = neuestes Datum)
 //   gemeldet:<id>        Haken „Ich habe mich gemeldet“
 //   treffen:<id>         Haken „Treffen geplant“
@@ -10,7 +10,16 @@
 import * as store from './store.js';
 import { iso, fromIso, addDays, uid } from './ui.js';
 
-export const RING_DEFAULTS = { 1: 'Innerer Kreis', 2: 'Enge Freunde', 3: 'Freunde', 4: 'Bekannte & Netzwerk' };
+export const RING_DEFAULTS = { 0: 'Partner', 1: 'Innerer Kreis', 2: 'Enge Freunde', 3: 'Freunde', 4: 'Bekannte & Netzwerk' };
+export const ringOf = (p) => p.ring ?? 4;
+
+// Was zählt bei dieser Person als Kontakt? Bestimmt die Beschriftung der Knöpfe.
+export const KINDS = {
+  treffen: { name: 'Treffen', done: 'Getroffen', plan: 'Treffen geplant', past: 'Getroffen', icon: 'users' },
+  telefonat: { name: 'Telefonat', done: 'Telefoniert', plan: 'Telefonat geplant', past: 'Telefoniert', icon: 'phone' },
+  date: { name: 'Date Night', done: 'Date Night', plan: 'Date geplant', past: 'Date Night', icon: 'heart' },
+};
+export const kind = (p) => KINDS[p.art] || KINDS.treffen;
 
 export const RHYTHMS = [
   { days: 7, name: 'wöchentlich' },
@@ -26,7 +35,7 @@ export function rhythmName(d) {
 }
 
 // Vorschlag beim Anlegen – pro Person jederzeit änderbar.
-export const RING_RHYTHM = { 1: 7, 2: 14, 3: 30, 4: 90 };
+export const RING_RHYTHM = { 0: 7, 1: 7, 2: 14, 3: 30, 4: 90 };
 
 export const PRIOS = [
   { id: 'hoch', name: 'Hoch', hint: 'immer in „Diese Woche“' },
@@ -44,7 +53,7 @@ export const setRingName = (n, name) => store.set(`ring:${n}`, name || RING_DEFA
 export function people() {
   return store.list('person:')
     .map(({ key, v }) => ({ id: key.slice(7), ...v }))
-    .sort((a, b) => (a.ring || 4) - (b.ring || 4) || a.name.localeCompare(b.name, 'de'));
+    .sort((a, b) => ringOf(a) - ringOf(b) || a.name.localeCompare(b.name, 'de'));
 }
 
 export function person(id) {
@@ -106,6 +115,11 @@ export function status(p, at = iso()) {
   if (left < 0) return { state: 'faellig', since, last, over: -left };
   if (left <= 3) return { state: 'bald', since, last, left };
   return { state: 'ok', since, last, left };
+}
+
+// z. B. „Telefoniert vor 3 Tagen“ / „Noch kein Kontakt eingetragen“
+export function lastText(p, since = status(p).since) {
+  return since == null ? 'Noch kein Kontakt eingetragen' : `${kind(p).past} ${sinceText(since)}`;
 }
 
 export function sinceText(since) {
@@ -193,8 +207,9 @@ export function weekPlan(monday) {
 // ---------- Rückblick ----------
 
 export function ringStats() {
-  return [1, 2, 3, 4].map((n) => {
-    const list = people().filter((p) => (p.ring || 4) === n && p.rhythm);
+  const all = people();
+  return [0, 1, 2, 3, 4].filter((n) => n > 0 || all.some((p) => ringOf(p) === 0)).map((n) => {
+    const list = all.filter((p) => ringOf(p) === n && p.rhythm);
     const ok = list.filter((p) => ['ok', 'bald'].includes(status(p).state)).length;
     return { n, ok, total: list.length };
   });

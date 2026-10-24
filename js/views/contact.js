@@ -15,6 +15,7 @@ const TABS = [
   { id: 'woche', name: 'Diese Woche' },
   { id: 'rueckblick', name: 'Rückblick' },
 ];
+const RINGS = [0, 1, 2, 3, 4];
 
 // Zuletzt gewählter Reiter – reine Ansichtssache, pro Gerät.
 function lastTab() {
@@ -53,38 +54,45 @@ function back() {
 
 const goPerson = (id) => { location.hash = `#/contact/p-${id}`; };
 
+const avatar = (p, big) => h(`span.avatar.rg-${pp.ringOf(p)}${big ? '.big' : ''}`, pp.initials(p.name));
+
 function prioTag(p) {
   const pr = pp.prio(p);
   return pr === 'normal' ? null : h(`span.prio.prio-${pr}`, pp.prioName(pr));
 }
 
-// Zeile mit Schnell-Aktionen (überall gleich).
+// Drei Knöpfe – Beschriftung je nach Kontaktart (Getroffen / Telefoniert / Date Night).
+function actions(p, refresh) {
+  const K = pp.kind(p);
+  const today = pp.hadContactOn(p.id, iso());
+  const btn = (on, ic, label, onclick) => h(`button.act${on ? '.on' : ''}`, { onclick }, h('span.act-icon', icon(on ? 'check' : ic, 18)), h('span', label));
+  return h('div.acts',
+    btn(today, K.icon, today ? `${K.done} ✓` : K.done, () => {
+      pp.toggleContact(p.id);
+      if (!today) toast(`Schön – ${K.name} mit ${p.name} eingetragen`);
+      refresh();
+    }),
+    btn(pp.flag('gemeldet', p.id), 'chat', 'Gemeldet', () => {
+      pp.toggleFlag('gemeldet', p.id);
+      refresh();
+    }),
+    btn(pp.flag('treffen', p.id), 'calendar', K.plan, () => {
+      pp.toggleFlag('treffen', p.id);
+      refresh();
+    }),
+  );
+}
+
 function personRow(p, refresh, subText) {
   const s = pp.status(p);
-  const today = pp.hadContactOn(p.id, iso());
-  const chip = (kind, label) => h(`button.tchip${pp.flag(kind, p.id) ? '.on' : ''}`, {
-    onclick: () => {
-      pp.toggleFlag(kind, p.id);
-      refresh();
-    },
-  }, pp.flag(kind, p.id) ? icon('check', 14) : null, label);
-  const sub = subText ?? `${s.since == null ? 'Noch kein Kontakt eingetragen' : `Kontakt ${pp.sinceText(s.since)}`}${p.rhythm ? ` · ${pp.rhythmName(p.rhythm)}` : ''}`;
+  const sub = subText ?? `${pp.lastText(p, s.since)}${p.rhythm ? ` · ${pp.rhythmName(p.rhythm)}` : ''}`;
   return h(`div.person.st-${s.state}`,
     h('button.person-top', { onclick: () => goPerson(p.id) },
-      h('span.avatar', pp.initials(p.name)),
+      avatar(p),
       h('span.hint-main', h('b', p.name, prioTag(p)), h('span.small.muted.block', sub)),
+      h('span.go', icon('back', 16)),
     ),
-    h('div.person-actions',
-      h(`button.tchip.contact${today ? '.on' : ''}`, {
-        onclick: () => {
-          pp.toggleContact(p.id);
-          if (!today) toast(`Schön – Kontakt mit ${p.name} eingetragen`);
-          refresh();
-        },
-      }, today ? 'Kontakt: heute' : 'Kontakt gehabt'),
-      chip('gemeldet', 'Gemeldet'),
-      chip('treffen', 'Treffen geplant'),
-    ),
+    actions(p, refresh),
   );
 }
 
@@ -100,43 +108,57 @@ function textWidth(t, size) {
 function circle(list, refresh) {
   const S = 400;
   const C = S / 2;
-  const R = [0, 58, 102, 146, 188];
+  const R = [0, 78, 118, 157, 194];
   const root = svg('svg', { viewBox: `0 0 ${S} ${S}`, class: 'circle-svg', role: 'img', 'aria-label': 'Dein Kreis' });
   const rings = {};
   for (let n = 4; n >= 1; n--) {
     rings[n] = svg('circle', { cx: C, cy: C, r: R[n], class: `ring ring-${n}` });
     root.append(rings[n]);
   }
-  root.append(svg('circle', { cx: C, cy: C, r: 22, class: 'me' }));
+  rings[0] = svg('circle', { cx: C, cy: C, r: 27, class: 'me' });
+  root.append(rings[0]);
   const me = svg('text', { x: C, y: C + 5, 'text-anchor': 'middle', class: 'me-t' });
   me.textContent = 'Ich';
   root.append(me);
 
-  // Welcher Ring liegt bei diesem Abstand zur Mitte?
+  // Welcher Bereich liegt bei diesem Abstand zur Mitte? (0 = Partner, direkt bei dir)
   const ringAt = (dist) => {
     if (dist > R[4] + 40) return null;
+    if (dist < 48) return 0;
     for (let n = 1; n < 4; n++) if (dist < (R[n] + R[n + 1]) / 2) return n;
     return 4;
   };
   const toSvg = (e) => new DOMPoint(e.clientX, e.clientY).matrixTransform(root.getScreenCTM().inverse());
-
-  // Platzierung: Jeder Ring wird so gedreht, dass sich die Namen möglichst nicht
-  // überdecken (mit inneren Ringen, untereinander und mit „Ich“ in der Mitte).
-  const placed = [{ x: C, y: C, w: 48, h: 48 }];
   const overlap = (a, b) => Math.max(0, Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2))
     * Math.max(0, Math.min(a.y + a.h / 2, b.y + b.h / 2) - Math.max(a.y - a.h / 2, b.y - b.h / 2));
+
   const layout = [];
+  const placed = [{ x: C, y: C, w: 54, h: 54 }];
+  // Partner: direkt unter „Ich“
+  const partners = list.filter((p) => pp.ringOf(p) === 0);
+  partners.forEach((p, i) => {
+    const size = 12;
+    const w = textWidth(`♥ ${p.name}`, size) + 22;
+    const x = C + (i - (partners.length - 1) / 2) * (w + 6);
+    const pos = { p, x, y: C + 40, w, h: size + 12, size, n: 0 };
+    placed.push(pos);
+    layout.push(pos);
+  });
+
+  // Ringe: so drehen, dass sich die Namen möglichst nicht überdecken.
   for (let n = 1; n <= 4; n++) {
-    const inRing = list.filter((p) => (p.ring || 4) === n);
+    const inRing = list.filter((p) => pp.ringOf(p) === n);
     const count = inRing.length;
     if (!count) continue;
-    const size = count > 10 ? 10 : 11.5;
-    const dims = inRing.map((p) => ({ w: textWidth(p.name, size) + 18, h: size + 11 }));
+    const size = count > 10 ? 11 : 12.5;
+    const dims = inRing.map((p) => ({ w: textWidth(p.name, size) + 20, h: size + 12 }));
     const crowded = dims.reduce((sum, d) => sum + d.w, 0) > 2 * Math.PI * R[n] * 0.9;
     const at = (off) => inRing.map((p, i) => {
       const a = (off + (360 / count) * i) * (Math.PI / 180);
       const rr = R[n] + (crowded ? (i % 2 ? 11 : -11) : 0);
-      return { p, x: C + rr * Math.cos(a), y: C + rr * Math.sin(a), ...dims[i], size };
+      // Am Rand nach innen rücken, damit der Name immer ganz sichtbar ist.
+      const x = Math.min(Math.max(C + rr * Math.cos(a), dims[i].w / 2 + 4), S - dims[i].w / 2 - 4);
+      return { p, x, y: C + rr * Math.sin(a), ...dims[i], size, n };
     });
     let best = null;
     for (let off = -90; off < 270; off += 4) {
@@ -145,20 +167,19 @@ function circle(list, refresh) {
       pos.forEach((a, i) => {
         for (const b of placed) cost += overlap(a, b);
         for (let j = i + 1; j < pos.length; j++) cost += overlap(a, pos[j]);
-        cost += 50 * (Math.max(0, a.w / 2 - a.x) + Math.max(0, a.x + a.w / 2 - S)); // nicht über den Rand
       });
       if (!best || cost < best.cost - 0.5) best = { cost, pos };
     }
     placed.push(...best.pos);
-    layout.push(...best.pos.map((x) => ({ ...x, n })));
+    layout.push(...best.pos);
   }
 
   for (const { p, x, y, w, h: ht, size, n } of layout) {
     const st = pp.status(p).state;
-    const g = svg('g', { class: `bubble st-${st} pr-${pp.prio(p)}`, role: 'button', 'aria-label': p.name });
+    const g = svg('g', { class: `bubble st-${st} pr-${pp.prio(p)}${n === 0 ? ' partner' : ''}`, role: 'button', 'aria-label': p.name });
     g.append(svg('rect', { x: x - w / 2, y: y - ht / 2, width: w, height: ht, rx: ht / 2 }));
     const t = svg('text', { x, y: y + size * 0.36, 'text-anchor': 'middle', 'font-size': size });
-    t.textContent = p.name;
+    t.textContent = n === 0 ? `♥ ${p.name}` : p.name;
     g.append(t);
 
     // Ziehen = in anderen Ring verschieben, kurz tippen = Person öffnen.
@@ -180,23 +201,22 @@ function circle(list, refresh) {
       if (Math.hypot(dx, dy) > 6) drag.moved = true;
       g.setAttribute('transform', `translate(${dx} ${dy})`);
       drag.target = ringAt(Math.hypot(x + dx - C, y + dy - C));
-      for (let k = 1; k <= 4; k++) rings[k].classList.toggle('target', k === drag.target && k !== n);
+      for (const k of RINGS) rings[k].classList.toggle('target', k === drag.target && k !== n);
     });
-    const end = () => {
+    g.addEventListener('pointerup', () => {
       if (!drag) return;
       const { moved, target } = drag;
       drag = null;
       g.classList.remove('dragging');
-      for (let k = 1; k <= 4; k++) rings[k].classList.remove('target');
+      for (const k of RINGS) rings[k].classList.remove('target');
       if (!moved) return goPerson(p.id);
-      if (target && target !== n) {
+      if (target != null && target !== n) {
         const { id, ...data } = p;
         pp.savePerson(id, { ...data, ring: target });
         toast(`${p.name} → ${pp.ringName(target)}`);
       }
       refresh();
-    };
-    g.addEventListener('pointerup', end);
+    });
     g.addEventListener('pointercancel', () => {
       drag = null;
       refresh();
@@ -210,27 +230,21 @@ function mapTab(refresh) {
   const list = pp.people();
   return [
     h('section.contact-hero',
-      h('div.row.between',
+      h('div.ch-head',
         h('div', h('h1', 'Dein Kreis'), h('p.ch-sub', list.length ? 'Ziehen zum Verschieben · Tippen zum Öffnen' : 'Füge die Menschen hinzu, die dir wichtig sind.')),
         h('a.navbtn', { href: '#/contact/neu', 'aria-label': 'Person hinzufügen' }, icon('plus', 22)),
       ),
       h('div.circle-wrap', circle(list, refresh)),
-      h('div.ring-legend',
-        [1, 2, 3, 4].map((n) => h('span', h('b', n), pp.ringName(n), h('i', list.filter((p) => (p.ring || 4) === n).length))),
-      ),
-      list.length > 0 && h('div.map-key',
-        h('span', h('i.k-hoch'), 'Prio hoch'),
-        h('span', h('i.k-warte'), 'Warteliste'),
-        h('span', h('i.k-due'), 'Schon eine Weile her'),
-      ),
     ),
     h('section.card',
       secTitle('contact', 'Deine Menschen', h('a.link', { href: '#/contact/ringe' }, 'Ringe benennen')),
       !list.length && h('p.muted', 'Noch niemand eingetragen. Fang mit Mama und Papa an – oben auf + tippen.'),
-      [1, 2, 3, 4].map((n) => {
-        const inRing = list.filter((p) => (p.ring || 4) === n);
+      RINGS.map((n) => {
+        const inRing = list.filter((p) => pp.ringOf(p) === n);
         if (!inRing.length) return null;
-        return h('div.ring-group', h('p.goalarea', `${n} · ${pp.ringName(n)}`), inRing.map((p) => personRow(p, refresh)));
+        return h('div.ring-group',
+          h(`p.ring-title.rg-${n}`, h('i'), n === 0 ? pp.ringName(0) : `${n} · ${pp.ringName(n)}`, h('span', inRing.length)),
+          h('div.people', inRing.map((p) => personRow(p, refresh))));
       }),
       h('a.btn.soft.full', { href: '#/contact/neu' }, icon('plus', 18), 'Person hinzufügen'),
     ),
@@ -255,38 +269,44 @@ function weekTab(refresh) {
     const d = fromIso(x.due);
     return `${x.due < iso() ? 'Fällig seit' : 'Fällig'} ${WD_SHORT[d.getDay()]} ${fmtShort(d)} · ${pp.rhythmName(x.p.rhythm)}`;
   };
+  const r = 30;
+  const c = 2 * Math.PI * r;
 
   return [
-    h('section.card.wk-stats',
-      h('div.row.between', h('h2', `KW ${isoWeek(mon)}`), h('span.count', `${plan.done}/${plan.total} erledigt`)),
-      h('div.bar.big', h('i', { style: { width: `${pct}%` } })),
-      h('div.wk-nums',
-        h('span', h('b', over.length), 'überfällig'),
-        h('span', h('b', dran.length), 'dran'),
-        h('span', h('b', done.length), 'erledigt'),
+    h('section.week-hero',
+      h('div.wh-ring', h('span', { html: `<svg viewBox="0 0 72 72"><circle cx="36" cy="36" r="${r}" class="t"/><circle cx="36" cy="36" r="${r}" class="v" stroke-dasharray="${(c * pct) / 100} ${c}" transform="rotate(-90 36 36)"/></svg>` }), h('b', `${pct}%`)),
+      h('div.wh-text',
+        h('p.wh-eyebrow', `KW ${isoWeek(mon)} · ${fmtShort(mon)}–${fmtShort(addDays(mon, 6))}`),
+        h('h1', plan.total ? `${plan.done} von ${plan.total} erledigt` : 'Ruhige Woche'),
+        h('div.wh-nums',
+          h('span', h('b', over.length), 'überfällig'),
+          h('span', h('b', dran.length), 'dran'),
+          h('span', h('b', done.length), 'erledigt'),
+        ),
       ),
-      !plan.total && h('p.small.muted', 'Diese Woche ist niemand fällig. Personen mit Prio „Hoch“ erscheinen hier immer.'),
     ),
+    !plan.total && h('p.small.muted.center', 'Diese Woche ist niemand fällig. Personen mit Prio „Hoch“ erscheinen hier immer.'),
     bdays.length > 0 && h('section.card',
       secTitle('cake', 'Geburtstage'),
       bdays.map(({ p, b }) => h('button.hint-row', { onclick: () => goPerson(p.id) },
-        h('span.avatar', pp.initials(p.name)),
+        avatar(p),
         h('span.hint-main', h('b', p.name), h('span.small.muted.block',
           `${b.inDays === 0 ? 'Heute! 🎉' : b.inDays === 1 ? 'Morgen' : `in ${b.inDays} Tagen`} · ${WD_SHORT[b.date.getDay()]} ${fmtShort(b.date)}${b.age ? ` · wird ${b.age}` : ''}`)),
+        h(`span.bday-badge${b.inDays <= 1 ? '.soon' : ''}`, b.inDays === 0 ? 'heute' : `${b.inDays} T`),
       )),
     ),
     over.length > 0 && h('section.card',
-      secTitle('heart', 'Schon eine Weile her'),
+      secTitle('heart', 'Schon eine Weile her', h('span.count', over.length)),
       h('p.small.muted', 'Kein Muss – nur eine freundliche Erinnerung.'),
-      over.map((x) => personRow(x.p, refresh, dueText(x))),
+      h('div.people', over.map((x) => personRow(x.p, refresh, dueText(x)))),
     ),
     dran.length > 0 && h('section.card',
-      secTitle('calendar', 'Diese Woche dran'),
-      dran.map((x) => personRow(x.p, refresh, dueText(x))),
+      secTitle('calendar', 'Diese Woche dran', h('span.count', dran.length)),
+      h('div.people', dran.map((x) => personRow(x.p, refresh, dueText(x)))),
     ),
-    done.length > 0 && h('section.card.calm',
-      secTitle('check', 'Erledigt'),
-      done.map((x) => personRow(x.p, refresh, `Kontakt am ${WD_SHORT[fromIso(x.day).getDay()]} ${fmtShort(fromIso(x.day))}`)),
+    done.length > 0 && h('section.card',
+      secTitle('check', 'Erledigt', h('span.count.ok', done.length)),
+      h('div.people', done.map((x) => personRow(x.p, refresh, `${pp.kind(x.p).past} am ${WD_SHORT[fromIso(x.day).getDay()]} ${fmtShort(fromIso(x.day))}`))),
     ),
     h(`section.card.collapsible${showWaitlist ? '.open' : ''}`,
       h('button.sec-title.sec-toggle', { onclick: () => { showWaitlist = !showWaitlist; refresh(); }, 'aria-expanded': showWaitlist },
@@ -296,8 +316,8 @@ function weekTab(refresh) {
         !wait.length && h('p.muted', 'Niemand auf der Warteliste.'),
         wait.map((p) => h('div.hint-row',
           h('button.hint-tap', { onclick: () => goPerson(p.id) },
-            h('span.avatar', pp.initials(p.name)),
-            h('span.hint-main', h('b', p.name), h('span.small.muted.block', `${pp.ringName(p.ring || 4)} · Kontakt ${pp.sinceText(pp.status(p).since)}`))),
+            avatar(p),
+            h('span.hint-main', h('b', p.name), h('span.small.muted.block', `${pp.ringName(pp.ringOf(p))} · ${pp.lastText(p)}`))),
           h('button.btn.ghost.sm', {
             onclick: () => {
               const { id, ...data } = p;
@@ -317,8 +337,8 @@ function weekTab(refresh) {
 function reviewTab(refresh) {
   const cur = weekStart();
   const weeks = Array.from({ length: 8 }, (_, i) => addDays(cur, -7 * (7 - i)));
-  const plans = weeks.map((m) => ({ m, plan: pp.weekPlan(m), all: pp.weekContacts(m).length }));
-  const maxT = Math.max(1, ...plans.map((x) => Math.max(x.plan.total, x.all)));
+  const plans = weeks.map((m) => ({ m, plan: pp.weekPlan(m) }));
+  const maxT = Math.max(1, ...plans.map((x) => x.plan.total));
   const from = iso(addDays(cur, -7 * (logWeeks - 1)));
   const log = pp.contactLog(from);
   const groups = [];
@@ -333,17 +353,17 @@ function reviewTab(refresh) {
     h('section.card',
       secTitle('chart', 'Wochen-Verlauf'),
       h('p.small.muted', 'Erledigt von „dran“ pro Woche (die letzten 8 Wochen).'),
-      h('div.wbars', plans.map(({ m, plan }) => h('div.wbar',
+      h('div.wbars', plans.map(({ m, plan }) => h(`div.wbar${+m === +cur ? '.cur' : ''}`,
         h('span.small', plan.total ? `${plan.done}/${plan.total}` : '–'),
-        h('div.wbar-track', { style: { height: `${(plan.total / maxT) * 100}%` } },
+        h('div.wbar-track', { style: { height: `${Math.max(4, (plan.total / maxT) * 100)}%` } },
           h('i', { style: { height: `${plan.total ? (plan.done / plan.total) * 100 : 0}%` } })),
         h('span.small.muted', `KW${isoWeek(m)}`),
       ))),
     ),
     h('section.card',
       secTitle('contact', 'Pro Ring im Rhythmus'),
-      pp.ringStats().map((r) => h('div.part',
-        h('span', `${r.n} · ${pp.ringName(r.n)}`),
+      pp.ringStats().map((r) => h(`div.part.rg-${r.n}`,
+        h('span', r.n === 0 ? pp.ringName(0) : `${r.n} · ${pp.ringName(r.n)}`),
         h('span.muted', r.total ? `${r.ok}/${r.total}` : '–'),
         h('div.bar', h('i', { style: { width: `${r.total ? (r.ok / r.total) * 100 : 0}%` } })),
       )),
@@ -351,8 +371,8 @@ function reviewTab(refresh) {
     h('section.card',
       secTitle('heart', 'Am längsten kein Kontakt'),
       pp.longestWithout(8).map(({ p, since }) => h('button.hint-row', { onclick: () => goPerson(p.id) },
-        h('span.avatar', pp.initials(p.name)),
-        h('span.hint-main', h('b', p.name, prioTag(p)), h('span.small.muted.block', `${since == null ? 'Noch kein Kontakt eingetragen' : `Kontakt ${pp.sinceText(since)}`} · ${pp.ringName(p.ring || 4)}`)),
+        avatar(p),
+        h('span.hint-main', h('b', p.name, prioTag(p)), h('span.small.muted.block', `${pp.lastText(p, since)} · ${pp.ringName(pp.ringOf(p))}`)),
       )),
       !pp.people().length && h('p.muted', 'Noch niemand eingetragen.'),
     ),
@@ -361,7 +381,10 @@ function reviewTab(refresh) {
       !groups.length && h('p.muted', `Keine Kontakte in den letzten ${logWeeks} Wochen eingetragen.`),
       groups.map((g) => h('div.logweek',
         h('p.goalarea', `KW ${isoWeek(fromIso(g.m))} · ${fmtShort(fromIso(g.m))}–${fmtShort(addDays(fromIso(g.m), 6))}`),
-        g.list.map((e) => h('div.logrow', h('span.muted', `${WD_SHORT[fromIso(e.d).getDay()]} ${fmtShort(fromIso(e.d))}`), h('b', e.p.name))),
+        g.list.map((e) => h('div.logrow',
+          h('span.muted', `${WD_SHORT[fromIso(e.d).getDay()]} ${fmtShort(fromIso(e.d))}`),
+          h('span.logname', h(`span.logicon.rg-${pp.ringOf(e.p)}`, icon(pp.kind(e.p).icon, 14)), h('b', e.p.name)),
+        )),
       )),
       logWeeks < 26 && h('button.btn.ghost.full', {
         onclick: () => {
@@ -386,16 +409,12 @@ function personView(id, refresh) {
   return h('div.view.a-contact',
     back(),
     h('section.card.person-head',
-      h('span.avatar.big', pp.initials(p.name)),
+      avatar(p, true),
       h('h1', p.name),
-      h('p.muted', `${pp.ringName(p.ring || 4)} · ${pp.rhythmName(p.rhythm)} · Prio ${pp.prioName(pp.prio(p))}`),
-      h('p.small.muted', s.since == null ? 'Noch kein Kontakt eingetragen' : `Letzter Kontakt ${pp.sinceText(s.since)}`),
-      b && h('p.small.muted', `Geburtstag ${pp.birthdayText(p.birthday)} · ${b.inDays === 0 ? 'heute 🎉' : `in ${b.inDays} Tagen`}${b.age ? ` (wird ${b.age})` : ''}`),
-      h('div.person-actions.center',
-        h(`button.tchip.contact${pp.hadContactOn(id, iso()) ? '.on' : ''}`, { onclick: () => { pp.toggleContact(id); refresh(); } }, pp.hadContactOn(id, iso()) ? 'Kontakt: heute' : 'Kontakt gehabt'),
-        h(`button.tchip${pp.flag('gemeldet', id) ? '.on' : ''}`, { onclick: () => { pp.toggleFlag('gemeldet', id); refresh(); } }, 'Gemeldet'),
-        h(`button.tchip${pp.flag('treffen', id) ? '.on' : ''}`, { onclick: () => { pp.toggleFlag('treffen', id); refresh(); } }, 'Treffen geplant'),
-      ),
+      h('p.muted', `${pp.ringName(pp.ringOf(p))} · ${pp.kind(p).name} ${pp.rhythmName(p.rhythm)}`),
+      h('div.head-tags', prioTag(p), h('span.small.muted', pp.lastText(p, s.since))),
+      b && h('p.small.muted', `🎂 ${pp.birthdayText(p.birthday)} · ${b.inDays === 0 ? 'heute!' : `in ${b.inDays} Tagen`}${b.age ? ` (wird ${b.age})` : ''}`),
+      actions(p, refresh),
     ),
     p.notes && h('section.card', secTitle('pen', 'Notizen'), h('p.notes', p.notes)),
     h('section.card',
@@ -423,8 +442,10 @@ function editView(refresh) {
 }
 
 function editForm(p, refresh) {
-  let ring = p?.ring || 3;
+  let ring = p ? pp.ringOf(p) : 3;
   let prio = p ? pp.prio(p) : 'normal';
+  let art = p?.art || 'treffen';
+  let artTouched = !!p;
   let rhythm = p ? (p.rhythm ?? 0) : pp.RING_RHYTHM[ring];
   let rhythmTouched = !!p;
   const name = h('input.input', { placeholder: 'Name', value: p?.name || '', autocapitalize: 'words' });
@@ -443,17 +464,20 @@ function editForm(p, refresh) {
     },
   });
   const ringBox = h('div.segs.wrap');
+  const artBox = h('div.segs');
   const prioBox = h('div.segs');
   const prioHint = h('p.small.muted');
   const rhythmBox = h('div.chips');
   const paint = (syncCustom = true) => {
-    ringBox.replaceChildren(...[1, 2, 3, 4].map((n) => h(`button.seg${ring === n ? '.on' : ''}`, {
+    ringBox.replaceChildren(...RINGS.map((n) => h(`button.seg${ring === n ? '.on' : ''}`, {
       onclick: () => {
         ring = n;
         if (!rhythmTouched) rhythm = pp.RING_RHYTHM[n];
+        if (!artTouched) art = n === 0 ? 'date' : 'treffen';
         paint();
       },
-    }, `${n} · ${pp.ringName(n)}`)));
+    }, n === 0 ? `♥ ${pp.ringName(0)}` : `${n} · ${pp.ringName(n)}`)));
+    artBox.replaceChildren(...Object.entries(pp.KINDS).map(([id, k]) => h(`button.seg${art === id ? '.on' : ''}`, { onclick: () => { art = id; artTouched = true; paint(); } }, k.name)));
     prioBox.replaceChildren(...pp.PRIOS.map((x) => h(`button.seg${prio === x.id ? '.on' : ''}`, { onclick: () => { prio = x.id; paint(); } }, x.name)));
     prioHint.textContent = pp.PRIOS.find((x) => x.id === prio).hint;
     rhythmBox.replaceChildren(...pp.RHYTHMS.map((r) => h(`button.chip${rhythm === r.days ? '.on' : ''}`, {
@@ -472,9 +496,10 @@ function editForm(p, refresh) {
     p && secTitle('settings', 'Bearbeiten'),
     h('label.field', h('span', 'Name'), name),
     h('div.field', h('span', 'Ring – wie nah steht ihr euch?'), ringBox),
-    h('div.field', h('span', 'Priorität'), prioBox, prioHint),
-    h('div.field', h('span', 'Wie oft möchtest du dich melden?'), rhythmBox,
+    h('div.field', h('span', 'Was zählt als Kontakt?'), artBox, h('p.small.muted', 'z. B. Telefonat für die Eltern in der Ferne, Date Night für deinen Partner.')),
+    h('div.field', h('span', 'Wie oft?'), rhythmBox,
       h('div.daysrow', h('span.small.muted', 'oder alle'), custom, h('span.small.muted', 'Tage'))),
+    h('div.field', h('span', 'Priorität'), prioBox, prioHint),
     h('label.field', h('span', 'Geburtstag (Jahr optional)'), bday),
     h('label.field', h('span', 'Notizen'), notes),
     h('div.buttons',
@@ -483,7 +508,7 @@ function editForm(p, refresh) {
           if (!name.value.trim()) return toast('Bitte einen Namen eintragen.');
           const b = pp.parseBirthday(bday.value);
           if (b === null) return toast('Geburtstag bitte als TT.MM. oder TT.MM.JJJJ eingeben.', 'error');
-          const id = pp.savePerson(p?.id, { name: name.value.trim(), ring, prio, rhythm, birthday: b, notes: notes.value.trim() });
+          const id = pp.savePerson(p?.id, { name: name.value.trim(), ring, art, prio, rhythm, birthday: b, notes: notes.value.trim() });
           toast(p ? 'Gespeichert' : `${name.value.trim()} hinzugefügt`);
           if (p) refresh();
           else goPerson(id);
@@ -503,13 +528,13 @@ function editForm(p, refresh) {
 // ---------- Ringe ----------
 
 function ringsView() {
-  const inputs = [1, 2, 3, 4].map((n) => ({ n, el: h('input.input', { value: pp.ringName(n) }) }));
+  const inputs = RINGS.map((n) => ({ n, el: h('input.input', { value: pp.ringName(n) }) }));
   return h('div.view.a-contact',
     back(),
     h('header.hero', h('h1', 'Deine Ringe')),
     h('section.card',
       h('p.muted', 'Ring 1 ist dir am nächsten. Gib den Ringen Namen, die für dich passen.'),
-      inputs.map(({ n, el }) => h('label.field', h('span', `Ring ${n}`), el)),
+      inputs.map(({ n, el }) => h('label.field', h('span', n === 0 ? 'Mitte (bei dir)' : `Ring ${n}`), el)),
       h('div.buttons', h('button.btn.primary', {
         onclick: () => {
           for (const { n, el } of inputs) pp.setRingName(n, el.value.trim());
