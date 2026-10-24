@@ -55,9 +55,25 @@ function stepRueckblick(go, refresh) {
     AREAS.map((a) => {
       const sc = week.areaScore(a.id, monday);
       const rating = rv.ratings?.[a.id];
+      const prev = addDays(monday, -7);
+      const prevPct = week.areaScore(a.id, prev).pct;
+      const prevRating = week.review(prev).ratings?.[a.id];
+      const goals = week.goals(monday, a.id);
+      const diff = sc.pct != null && prevPct != null ? sc.pct - prevPct : null;
       return h(`section.card.rv-area.a-${a.id}`,
         h('div.sec-title', h('span.sec-icon', icon(a.id, 18)), h('h2', a.name),
           sc.pct != null && h('span.rv-pct', `${sc.pct} %`)),
+        (diff != null || prevRating) && h('p.rv-compare',
+          diff != null && h(`span.delta${diff > 0 ? '.up' : diff < 0 ? '.down' : ''}`, diff === 0 ? '= wie Vorwoche' : `${diff > 0 ? '▲ +' : '▼ '}${diff} % zur Vorwoche`),
+          prevRating && h('span', `Letzte Bewertung: ${prevRating}/10`)),
+        goals.length > 0 && h('div.rv-goals',
+          h('p.rv-q', 'Deine Wochenziele – erreicht?'),
+          goals.map((g) => h(`button.check${g.done ? '.done' : ''}`, {
+            onclick: () => {
+              week.updateGoal(g, { done: !g.done });
+              refresh();
+            },
+          }, h('span.box', icon('check', 18)), h('span.check-name', g.text)))),
         sc.parts.length
           ? h('div.parts', sc.parts.map((p) => h('div.part',
             h('span', p.label),

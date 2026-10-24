@@ -66,9 +66,10 @@ export function reviewMonday(now = new Date()) {
 // ---------- Zielerreichung ----------
 
 // Teile pro Bereich (aus den Tagesdaten) + Wochenziele. Jeder Teil zählt gleich viel.
-export function areaScore(area, monday) {
+// withGoals=false für die laufende Woche: Ziele werden erst im Review abgehakt.
+export function areaScore(area, monday, { withGoals = true } = {}) {
   const parts = area === 'koerper' ? body.weekParts(monday) : [];
-  const g = goals(monday, area);
+  const g = withGoals ? goals(monday, area) : [];
   if (g.length) parts.push({ label: 'Wochenziele', done: g.filter((x) => x.done).length, total: g.length });
   const used = parts.filter((p) => p.total > 0);
   const pct = used.length ? Math.round((used.reduce((s, p) => s + p.done / p.total, 0) / used.length) * 100) : null;

@@ -1,22 +1,6 @@
-// Wochenziele: Abhak-Liste (Startseite) und Bearbeiten (Review, Wochenansicht).
+// Wochenziele bearbeiten (Review, Wochenansicht).
 import * as week from '../week.js';
-import { AREAS } from '../areas.js';
 import { h, icon } from '../ui.js';
-
-// Alle Ziele der Woche, nach Bereich gruppiert – Antippen hakt ab.
-export function goalChecklist(monday, refresh) {
-  const groups = AREAS.map((a) => ({ a, list: week.goals(monday, a.id) })).filter((g) => g.list.length);
-  if (!groups.length) return null;
-  return groups.map(({ a, list }) => h(`div.goalgroup.a-${a.id}`,
-    h('p.goalarea', icon(a.id, 15), a.tab),
-    list.map((g) => h(`button.check${g.done ? '.done' : ''}`, {
-      onclick: () => {
-        week.updateGoal(g, { done: !g.done });
-        refresh();
-      },
-    }, h('span.box', icon('check', 18)), h('span.check-name', g.text))),
-  ));
-}
 
 // Ziele eines Bereichs bearbeiten. suggestions: offene Ziele der Vorwoche zum Übernehmen.
 export function goalEditor(monday, area, refresh, suggestions = []) {

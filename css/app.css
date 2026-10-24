@@ -544,3 +544,11 @@ textarea.input.rv-text { resize: vertical; min-height: 84px; line-height: 1.4; }
 .preview-text pre { white-space: pre-wrap; font: 12.5px/1.45 ui-monospace, Menlo, monospace; background: var(--bg); padding: 12px; border-radius: 12px; margin: 8px 0 0; }
 .card .link { justify-self: start; }
 .area-pct .block { font-size: 13px; font-weight: 500; letter-spacing: 0; margin-top: 2px; }
+
+.rv-compare { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13.5px; color: var(--muted); }
+.delta.up { color: var(--ok); }
+.delta.down { color: var(--no); }
+.rv-goals { padding: 4px 12px 2px; border-radius: 14px; background: var(--bg); }
+.rv-goals .rv-q { padding: 8px 0 2px; }
+.rv-goals .check:first-of-type { border-top: 0; }
+.card > .hist-row + .btn { margin-top: 12px; }

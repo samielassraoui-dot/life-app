@@ -3,7 +3,6 @@ import * as sync from '../sync.js';
 import { AREAS } from '../areas.js';
 import * as body from '../body.js';
 import * as week from '../week.js';
-import { goalChecklist } from './goals.js';
 import { sparkline } from '../chart.js';
 import { h, icon, iso, weekDays, isoWeek, fmtLong, WD_SHORT, MONTHS, addDays, weekStart } from '../ui.js';
 
@@ -45,21 +44,14 @@ function reviewCard(now = new Date()) {
   );
 }
 
-function goalsCard(refresh) {
-  const m = weekStart();
-  const list = goalChecklist(m, refresh);
-  return h('section.card.goals-card',
-    h('div.sec-title', h('span.sec-icon', icon('check', 18)), h('h2', 'Wochenziele'), h('a.link', { href: '#/woche' }, list ? 'Bearbeiten' : '')),
-    list || h('a.empty-goals', { href: '#/woche' }, 'Noch keine Ziele für diese Woche. Du legst sie im Sonntags-Review fest – oder ', h('b', 'jetzt hier'), '.'),
-  );
-}
+let histWeeks = 4;
 
-function historyCard() {
-  const hist = week.ratingHistory(12);
+function historyCard(refresh) {
+  const hist = week.ratingHistory(histWeeks);
   if (!hist.some((x) => Object.keys(x.ratings).length)) return null;
   return h('section.card',
     h('div.sec-title', h('span.sec-icon', icon('chart', 18)), h('h2', 'Deine Wochen'), h('a.link', { href: '#/woche' }, 'Alle Wochen')),
-    h('p.small.muted', 'Deine Bewertung (1–10) der letzten 12 Wochen. Antippen zeigt die Woche.'),
+    h('p.small.muted', `Deine Bewertung (1–10) der letzten ${histWeeks} Wochen. Antippen zeigt die Woche.`),
     AREAS.map((a) => {
       const vals = hist.map((x) => ({ label: `KW ${isoWeek(x.monday)}`, v: x.ratings[a.id] ?? null }));
       const last = [...vals].reverse().find((v) => v.v != null);
@@ -76,11 +68,17 @@ function historyCard() {
         h('span.hist-right', valEl, sub),
       );
     }),
+    h('button.btn.ghost.full', {
+      onclick: () => {
+        histWeeks = histWeeks === 4 ? 12 : 4;
+        refresh();
+      },
+    }, histWeeks === 4 ? 'Übersicht 12 Wochen' : 'Nur letzte 4 Wochen'),
   );
 }
 
-// Wochenfortschritt pro Bereich (weitere Bereiche folgen in den nächsten Stufen)
-const score = (id) => week.areaScore(id, weekStart()).pct;
+// Wochenfortschritt pro Bereich aus den Tagesdaten (weitere Bereiche folgen in den nächsten Stufen)
+const score = (id) => week.areaScore(id, weekStart(), { withGoals: false }).pct;
 
 // „Als Nächstes“: nächste Mahlzeit und überfällige Routinen – gegen das Vergessen.
 function nextUp(today) {
@@ -133,7 +131,7 @@ export function render(refresh) {
         return h(`a.card.area.a-${a.id}`, { href: `#/${a.id}` },
           h('div.area-top', h('span.area-icon', icon(a.id, 20)), h('span.area-name', a.tab)),
           pct == null
-            ? h('p.small.muted', a.ready ? 'Noch keine Daten' : `ab Stufe ${a.stage} · Ziele zählen schon`)
+            ? h('p.small.muted', a.ready ? 'Noch keine Daten' : `ab Stufe ${a.stage}`)
             : h('p.area-pct', pct, h('small', '%'), h('span.small.muted.block', 'diese Woche')),
           h('div.bar', h('i', { style: { width: `${pct || 0}%` } })),
         );
@@ -141,8 +139,7 @@ export function render(refresh) {
     ),
 
     reviewCard(now),
-    goalsCard(refresh),
-    historyCard(),
+    historyCard(refresh),
 
     !sync.getConfig() && h('a.card.hint', { href: '#/einstellungen' },
       h('span.review-icon', icon('sync', 22)),
