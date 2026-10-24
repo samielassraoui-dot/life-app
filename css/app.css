@@ -934,3 +934,47 @@ textarea.input.journal { resize: vertical; min-height: 64px; line-height: 1.4; }
 .kchip { font-size: 12.5px; padding: 10px 2px; }
 
 .wh-nums > .sdot, .wh-nums span .sdot { flex: none !important; padding: 0 !important; width: 8px; height: 8px; background: var(--sc) !important; border-radius: 50%; }
+
+/* Contact: aufklappbare Boxen, Ring-Gruppen, Verlauf, Kalender */
+.box .sec-title .count { margin-left: auto; }
+.box .sec-title h2 { flex: 0 1 auto; }
+.box .chev { margin-left: 4px; }
+.box:not(.open) .sec-title .count:only-of-type { margin-left: auto; }
+.box .sec-toggle h2 + .chev { margin-left: auto; }
+
+button.ring-title { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 750; text-transform: uppercase; letter-spacing: .04em; color: var(--rc); padding: 10px 0 6px; cursor: pointer; text-align: left; }
+.ring-title .rt-name { flex: 1; min-width: 0; }
+.rt-sum { display: flex; gap: 8px; text-transform: none; letter-spacing: 0; color: var(--muted); font-weight: 650; font-size: 12.5px; }
+.rt-sum span { display: inline-flex; align-items: center; gap: 4px; }
+.rt-sum .sdot { width: 8px; height: 8px; }
+.ring-group .chev { color: var(--muted); display: grid; transform: rotate(-90deg); transition: transform .2s; }
+.ring-group.open .chev { transform: rotate(90deg); }
+.ring-group + .ring-group { margin-top: 2px; border-top: 1px solid var(--line); }
+.link.rename { display: inline-block; font-size: 14px; }
+
+.sheet-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sheet-row .field[hidden] { display: none; }
+.sheet-row:has(.field[hidden]) { grid-template-columns: 1fr; }
+.btn.cal-all { align-self: flex-start; gap: 6px; }
+
+.trend-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.trend-stats span { display: flex; flex-direction: column; align-items: center; padding: 10px 4px; border-radius: 14px; background: var(--bg); font-size: 12px; color: var(--muted); }
+.trend-stats b { font-size: 20px; color: var(--text); letter-spacing: -.01em; }
+.trend-svg { width: 100%; height: auto; display: block; touch-action: pan-y; overflow: visible; }
+.trend-svg .grid { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
+.trend-svg .tline { fill: none; stroke: var(--contact); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.trend-svg .tpt { fill: var(--card); stroke: var(--contact); stroke-width: 2.5; transition: r .15s; }
+.trend-svg .tpt.on { fill: var(--contact); r: 6.5; }
+.trend-svg .tval { fill: var(--text); font-size: 11px; font-weight: 700; }
+.trend-svg .axis { fill: var(--muted); font-size: 10.5px; }
+.trend-info { text-align: center; font-size: 13.5px; color: var(--text); padding: 8px 12px; border-radius: 12px; background: var(--bg); }
+
+.since.over { color: var(--s-over); }
+.calm-ok { display: flex; align-items: center; gap: 8px; color: var(--s-ok); font-weight: 650; font-size: 14.5px; padding: 8px 0; }
+button.ring-title span { margin-left: 0; background: none; padding: 0; border-radius: 0; font-size: inherit; color: inherit; }
+button.ring-title .rt-sum { color: var(--muted); font-size: 12.5px; }
+button.ring-title .rt-sum span { color: var(--muted); }
+button.ring-title .rt-sum .sdot { width: 8px; height: 8px; border-radius: 50%; background: var(--sc); }
+button.ring-title .chev { color: var(--muted); }
+.ring-group:not(.open) .chev, .tl-week:not(.open) .tl-head .chev { transform: rotate(-90deg) !important; }
+.ring-group.open .chev, .tl-week.open .tl-head .chev { transform: rotate(90deg) !important; }

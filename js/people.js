@@ -4,7 +4,7 @@
 //   person:<id>          {name, ring 0–4 (0 = Partner), art (Standardkontakt), prio hoch|normal|warte,
 //                         rhythm (Tage, 0 = ohne), birthday 'MM-TT' oder 'JJJJ-MM-TT', notes}
 //   clog:<id>:<datum>    Kontakt an diesem Tag: {art, note} (ältere Einträge: true)
-//   cplan:<id>           geplanter Kontakt {date, art, note}
+//   cplan:<id>           geplanter Kontakt {date, time?, art, note}
 //   ring:<0–4>           eigener Name des Rings
 
 import * as store from './store.js';
@@ -25,6 +25,9 @@ export const normKind = (a) => (KINDS[a] ? a : LEGACY[a] || 'getroffen');
 // Standardkontakt einer Person (für „Wischen nach rechts“)
 export const defaultKind = (p) => normKind(p.art || (ringOf(p) === 0 ? 'date' : 'getroffen'));
 export const kindName = (a) => KINDS[normKind(a)].name;
+// Für Geplantes: „Treffen“ statt „Getroffen“
+const PLAN_NAMES = { telefoniert: 'Telefonat', getroffen: 'Treffen', geschrieben: 'Nachricht', date: 'Date Night' };
+export const planName = (a) => PLAN_NAMES[normKind(a)];
 
 export const RHYTHMS = [
   { days: 7, name: 'wöchentlich' },
@@ -253,11 +256,15 @@ export function ringStats() {
   });
 }
 
-export function longestWithout(limit = 8) {
+// „Melde dich mal wieder“: nur wer laut eigenem Rhythmus überfällig ist (auch Warteliste),
+// am stärksten überfällig zuerst. Geplante Kontakte zählen nicht.
+export function reachOut() {
   return people()
-    .map((p) => ({ p, since: status(p).since }))
-    .sort((a, b) => (b.since ?? 1e9) - (a.since ?? 1e9))
-    .slice(0, limit);
+    .filter((p) => p.rhythm)
+    .map((p) => ({ p, s: status(p) }))
+    .filter((x) => x.s.state === 'ueberfaellig')
+    .map((x) => ({ ...x, ratio: x.s.since == null ? 1e9 : x.s.since / x.p.rhythm }))
+    .sort((a, b) => b.ratio - a.ratio || a.p.name.localeCompare(b.p.name, 'de'));
 }
 
 // Alle Kontakte (neueste zuerst) ab einem Datum: [{p, date, art, note}]
@@ -290,3 +297,33 @@ export function weekContacts(monday) {
 }
 
 export { iso };
+
+// ---------- Kalender (Apple Kalender & Co.) ----------
+
+// Erstellt eine .ics-Datei aus geplanten Kontakten: [{p, plan}]
+// Mit Uhrzeit: 1 Stunde, Erinnerung 30 Min vorher. Ohne: ganztägig, Erinnerung um 9 Uhr.
+export function plansIcs(items) {
+  const esc = (t) => String(t).replace(/\\/g, '\\\\').replace(/[,;]/g, (c) => `\\${c}`).replace(/\n/g, '\\n');
+  const p2 = (n) => String(n).padStart(2, '0');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//4 Bereiche//Life App//DE', 'CALSCALE:GREGORIAN'];
+  for (const { p, plan: pl } of items) {
+    const title = `${planName(pl.art)} mit ${p.name}`;
+    const d = pl.date.replace(/-/g, '');
+    lines.push('BEGIN:VEVENT', `UID:plan-${p.id}-${pl.date}@life4`, `DTSTAMP:${stamp}`);
+    if (pl.time) {
+      const [hh, mm] = pl.time.split(':').map(Number);
+      const end = new Date(fromIso(pl.date).setHours(hh + 1, mm));
+      lines.push(`DTSTART:${d}T${p2(hh)}${p2(mm)}00`,
+        `DTEND:${end.getFullYear()}${p2(end.getMonth() + 1)}${p2(end.getDate())}T${p2(end.getHours())}${p2(end.getMinutes())}00`);
+    } else {
+      const next = iso(addDays(fromIso(pl.date), 1)).replace(/-/g, '');
+      lines.push(`DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${next}`);
+    }
+    lines.push(`SUMMARY:${esc(title)}`);
+    if (pl.note) lines.push(`DESCRIPTION:${esc(pl.note)}`);
+    lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(title)}`, `TRIGGER:${pl.time ? '-PT30M' : 'PT9H'}`, 'END:VALARM', 'END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}

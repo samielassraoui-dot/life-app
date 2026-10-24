@@ -4,7 +4,7 @@
 //   Rückblick   Verlauf: wie lief es, wer kam zu kurz, Kontakt-Tagebuch
 // Ton: ruhig, freundlich, ohne Schuldgefühle.
 import * as pp from '../people.js';
-import { h, icon, toast, iso, fromIso, addDays, weekStart, isoWeek, WD_SHORT, fmtShort } from '../ui.js';
+import { h, icon, toast, iso, fromIso, addDays, weekStart, isoWeek, WD_SHORT, fmtShort, saveFile } from '../ui.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const svg = (tag, attrs) => {
@@ -30,8 +30,43 @@ function lastTab() {
   }
 }
 
-// Auf-/zugeklappte Gruppen (Erledigt standardmäßig zu)
-const open = { due: true, planned: true, done: false };
+// Auf-/zugeklappte Boxen – pro Gerät gemerkt (reine Ansichtssache)
+const OPEN_DEFAULTS = { menschen: true, 'ring-0': true, 'ring-1': true, due: true, planned: true, done: false, verlauf: true, ringe: false, reach: true, tagebuch: false };
+let openState = (() => {
+  try {
+    return JSON.parse(localStorage.getItem('life4.contactOpen')) || {};
+  } catch {
+    return {};
+  }
+})();
+const isOpen = (k) => openState[k] ?? OPEN_DEFAULTS[k] ?? false;
+function toggleOpen(k, refresh) {
+  openState = { ...openState, [k]: !isOpen(k) };
+  try {
+    localStorage.setItem('life4.contactOpen', JSON.stringify(openState));
+  } catch { /* egal */ }
+  refresh();
+}
+
+// Aufklappbare Karte mit Überschrift, Zähler und Pfeil
+function box(key, ic, title, count, body, refresh, cls = '') {
+  const o = isOpen(key);
+  return h(`section.card.collapsible.box${o ? '.open' : ''}${cls}`,
+    h('button.sec-title.sec-toggle', { onclick: () => toggleOpen(key, refresh), 'aria-expanded': o },
+      h('span.sec-icon', icon(ic, 18)), h('h2', title), count != null && h('span.count', count), h('span.chev', icon('back', 18))),
+    o && body,
+  );
+}
+
+// Geplante Kontakte als Kalenderdatei (Apple Kalender: Datei öffnen → hinzufügen)
+async function toCalendar(items) {
+  if (!items.length) return toast('Keine geplanten Kontakte.');
+  const name = items.length === 1 ? `kontakt-${items[0].p.name.toLowerCase().replace(/[^a-z0-9äöüß]+/g, '-')}.ics` : 'geplante-kontakte.ics';
+  await saveFile(new Blob([pp.plansIcs(items)], { type: 'text/calendar' }), name, 'text/calendar');
+}
+
+const planText = (pl) => `${pp.planName(pl.art)} · ${dayLabel(pl.date)}${pl.time ? `, ${pl.time} Uhr` : ''}`;
+
 let logWeeks = 4;
 const openWeeks = new Set();
 
@@ -80,6 +115,8 @@ function openSheet(p, refresh, preset = {}) {
   const kinds = ['telefoniert', 'getroffen', 'geschrieben', ...(pp.defaultKind(p) === 'date' || pp.ringOf(p) === 0 ? ['date'] : []), 'planen'];
   let kind = preset.kind || pp.defaultKind(p);
   const date = h('input.input', { type: 'date', value: iso() });
+  const time = h('input.input', { type: 'time' });
+  const timeField = h('label.field', h('span', 'Uhrzeit (optional)'), time);
   const note = h('textarea.input', { rows: 3, placeholder: 'Notiz (optional) – worüber habt ihr gesprochen?' });
   const err = h('p.error');
   const chips = h('div.sheet-kinds', { style: { gridTemplateColumns: `repeat(${kinds.length > 4 ? 3 : 4}, 1fr)` } });
@@ -94,6 +131,7 @@ function openSheet(p, refresh, preset = {}) {
     }, icon(k === 'planen' ? 'calendar' : pp.KINDS[k].icon, 18), k === 'planen' ? 'Planen' : pp.KINDS[k].name)));
     date.min = kind === 'planen' ? iso() : '';
     date.max = kind === 'planen' ? '' : iso();
+    timeField.hidden = kind !== 'planen';
   };
   paint();
 
@@ -106,8 +144,9 @@ function openSheet(p, refresh, preset = {}) {
     if (!d) return (err.textContent = 'Bitte ein Datum wählen.');
     if (kind === 'planen') {
       if (d < iso()) return (err.textContent = 'Ein Plan liegt heute oder in der Zukunft.');
-      pp.setPlan(p.id, { date: d, art: pp.defaultKind(p), note: note.value.trim() });
-      toast(`Geplant: ${p.name} am ${dayLabel(d)}`);
+      const pl = { date: d, art: pp.defaultKind(p), note: note.value.trim(), ...(time.value ? { time: time.value } : {}) };
+      pp.setPlan(p.id, pl);
+      toast(`Geplant: ${p.name} · ${dayLabel(d)}`, '', { label: 'In Kalender', fn: () => toCalendar([{ p, plan: pl }]) });
     } else {
       if (d > iso()) return (err.textContent = 'Für die Zukunft bitte „Planen“ wählen.');
       pp.logContact(p.id, { date: d, art: kind, note: note.value.trim() });
@@ -123,7 +162,7 @@ function openSheet(p, refresh, preset = {}) {
       h('div.sheet-head', avatar(p), h('div', h('h2', p.name), h('p.small.muted', pp.lineText(p)))),
       h('p.sheet-label', 'Was war?'),
       chips,
-      h('label.field', h('span', 'Datum'), date),
+      h('div.sheet-row', h('label.field', h('span', 'Datum'), date), timeField),
       h('label.field', h('span', 'Notiz'), note),
       err,
       h('div.sheet-btns',
@@ -373,30 +412,35 @@ function mapTab(refresh) {
       ),
       h('div.circle-wrap', circle(list, refresh)),
     ),
-    h('section.card',
-      secTitle('contact', 'Deine Menschen', h('a.link', { href: '#/contact/ringe' }, 'Ringe benennen')),
+    box('menschen', 'contact', 'Deine Menschen', list.length, [
       !list.length && h('p.muted', 'Noch niemand eingetragen. Fang mit Mama und Papa an – oben auf + tippen.'),
       RINGS.map((n) => {
         const inRing = list.filter((p) => pp.ringOf(p) === n);
         if (!inRing.length) return null;
-        return h('div.ring-group',
-          h(`p.ring-title.rg-${n}`, h('i'), n === 0 ? pp.ringName(0) : `${n} · ${pp.ringName(n)}`, h('span', inRing.length)),
-          h('div.plist', inRing.map((p) => personLine(p))));
+        const key = `ring-${n}`;
+        const o = isOpen(key);
+        const counts = {};
+        for (const p of inRing) {
+          const st = pp.status(p).state;
+          counts[st] = (counts[st] || 0) + 1;
+        }
+        return h(`div.ring-group${o ? '.open' : ''}`,
+          h(`button.ring-title.rg-${n}`, { onclick: () => toggleOpen(key, refresh), 'aria-expanded': o },
+            h('i'), h('span.rt-name', n === 0 ? pp.ringName(0) : `${n} · ${pp.ringName(n)}`),
+            h('span.rt-sum', Object.keys(pp.STATES).filter((k) => counts[k]).map((k) => h('span', dot(k), counts[k]))),
+            h('span.chev', icon('back', 16))),
+          o && h('div.plist', inRing.map((p) => personLine(p))));
       }),
       list.length > 0 && legend(),
-    ),
+      h('a.link.rename', { href: '#/contact/ringe' }, 'Ringe benennen'),
+    ], refresh),
   ];
 }
 
 // ---------- Reiter 2: Diese Woche ----------
 
-function group(id, ic, title, items, refresh, empty) {
-  const isOpen = open[id];
-  return h(`section.card.collapsible.grp${isOpen ? '.open' : ''}`,
-    h('button.sec-title.sec-toggle', { onclick: () => { open[id] = !open[id]; refresh(); }, 'aria-expanded': isOpen },
-      h('span.sec-icon', icon(ic, 18)), h('h2', title), h('span.count', items.length), h('span.chev', icon('back', 18))),
-    isOpen && (items.length ? h('div.plist', items) : h('p.small.muted', empty)),
-  );
+function group(id, ic, title, items, refresh, empty, extra = null) {
+  return box(id, ic, title, items.length, [extra, items.length ? h('div.plist', items) : h('p.small.muted', empty)], refresh, '.grp');
 }
 
 function weekTab(refresh) {
@@ -411,7 +455,7 @@ function weekTab(refresh) {
   const dueRows = due.map(({ p, s }) => swipeRow(p, refresh,
     `${s.state === 'ueberfaellig' ? 'Überfällig' : s.state === 'bald_faellig' ? 'Bald fällig' : 'Diese Woche'} · ${pp.lineText(p, s)}`, s));
   const planRows = planned.map(({ p, s }) => swipeRow(p, refresh,
-    `${pp.kindName(s.plan.art)} geplant · ${dayLabel(s.plan.date)}${s.plan.note ? ` · ${s.plan.note}` : ''}`, s));
+    `${planText(s.plan)}${s.plan.note ? ` · ${s.plan.note}` : ''}`, s));
   const doneRows = done.map(({ p, s, day }) => {
     const c2 = pp.contacts(p.id).find((x) => x.date === day);
     return personLine(p, `${pp.kindName(c2?.art)} · ${dayLabel(day)}${c2?.note ? ` · ${c2.note}` : ''}`, s);
@@ -433,24 +477,77 @@ function weekTab(refresh) {
     ),
     (due.length > 0 || planned.length > 0) && h('p.small.muted.swipe-hint', '→ Nach rechts wischen trägt den Standardkontakt für heute ein.'),
     group('due', 'heart', 'Fällig', dueRows, refresh, 'Niemand ist fällig – schön!'),
-    group('planned', 'calendar', 'Geplant', planRows, refresh, 'Nichts geplant. Über „Eintragen“ → „Planen“ legst du etwas fest.'),
+    group('planned', 'calendar', 'Geplant', planRows, refresh, 'Nichts geplant. Über „Eintragen“ → „Planen“ legst du etwas fest.',
+      planned.length > 0 && h('button.btn.ghost.sm.cal-all', { onclick: () => toCalendar(planned.map(({ p, s }) => ({ p, plan: s.plan }))) }, icon('calendar', 16), 'Alle in Apple Kalender')),
     group('done', 'check', 'Erledigt', doneRows, refresh, 'Diese Woche noch kein Kontakt eingetragen.'),
   ];
 }
 
 // ---------- Reiter 3: Rückblick ----------
 
+// Verlauf als Fläche: Anteil erledigt pro Woche, darunter Kontakte pro Woche.
+function trendChart(rows) {
+  const W = 340;
+  const H = 168;
+  const P = { l: 16, r: 16, t: 28, b: 30 };
+  const n = rows.length;
+  const x = (i) => (n === 1 ? W / 2 : P.l + (i * (W - P.l - P.r)) / (n - 1));
+  const y = (v) => P.t + (1 - v / 100) * (H - P.t - P.b);
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'trend-svg', role: 'img', 'aria-label': 'Wochen-Verlauf' });
+  root.innerHTML = '<defs><linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--contact)" stop-opacity=".32"/><stop offset="1" stop-color="var(--contact)" stop-opacity="0"/></linearGradient></defs>';
+  for (const v of [0, 50, 100]) {
+    root.append(svg('line', { x1: P.l, x2: W - P.r, y1: y(v), y2: y(v), class: 'grid' }));
+  }
+  const pts = rows.map((r, i) => ({ ...r, i })).filter((r) => r.pct != null);
+  if (pts.length > 1) {
+    const line = pts.map((r) => `${x(r.i)},${y(r.pct)}`).join(' L ');
+    root.append(svg('path', { d: `M ${x(pts[0].i)},${y(0)} L ${line} L ${x(pts[pts.length - 1].i)},${y(0)} Z`, fill: 'url(#trendFill)' }));
+    root.append(svg('path', { d: `M ${line}`, class: 'tline' }));
+  }
+  const info = h('p.trend-info', ' ');
+  const show = (r) => {
+    info.textContent = `KW ${isoWeek(r.m)}: ${r.total ? `${r.done} von ${r.total} erledigt` : 'niemand fällig'} · ${r.n} ${r.n === 1 ? 'Kontakt' : 'Kontakte'}`;
+    root.querySelectorAll('.tpt').forEach((c) => c.classList.toggle('on', +c.dataset.i === r.i));
+  };
+  rows.forEach((r, i) => {
+    const lbl = svg('text', { x: x(i), y: H - 9, 'text-anchor': 'middle', class: 'axis' });
+    lbl.textContent = `KW${isoWeek(r.m)}`;
+    root.append(lbl);
+    if (r.pct == null) return;
+    const c = svg('circle', { cx: x(i), cy: y(r.pct), r: 5, class: 'tpt', 'data-i': i });
+    root.append(c);
+    const t = svg('text', { x: x(i), y: y(r.pct) - 10, 'text-anchor': 'middle', class: 'tval' });
+    t.textContent = `${r.pct}%`;
+    root.append(t);
+  });
+  root.addEventListener('pointerdown', (e) => {
+    const b = root.getBoundingClientRect();
+    const px = ((e.clientX - b.left) / b.width) * W;
+    let best = 0;
+    rows.forEach((_, i) => { if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i; });
+    show({ ...rows[best], i: best });
+  });
+  if (rows.length) show({ ...rows[rows.length - 1], i: rows.length - 1 });
+  return h('div.trend', root, info);
+}
+
 function reviewTab(refresh) {
   const cur = weekStart();
   const first = pp.firstContactDate();
-  let weeks = [];
+  const weeks = [];
   if (first) {
     let m = weekStart(fromIso(first));
     if (+m < +addDays(cur, -7 * 7)) m = addDays(cur, -7 * 7);
     for (; +m <= +cur; m = addDays(m, 7)) weeks.push(m);
   }
-  const plans = weeks.map((m) => ({ m, wp: pp.weekPlan(m) }));
-  const maxT = Math.max(1, ...plans.map((x) => x.wp.total));
+  const rows = weeks.map((m) => {
+    const wp = pp.weekPlan(m);
+    return { m, ...wp, pct: wp.total ? Math.round((wp.done / wp.total) * 100) : null, n: pp.weekContacts(m).length };
+  });
+  const withPct = rows.filter((r) => r.pct != null);
+  const avg = withPct.length ? Math.round(withPct.reduce((sum, r) => sum + r.pct, 0) / withPct.length) : null;
+  const totalContacts = rows.reduce((sum, r) => sum + r.n, 0);
+  const reach = pp.reachOut();
 
   const from = iso(addDays(cur, -7 * (logWeeks - 1)));
   const log = pp.contactLog(from);
@@ -464,52 +561,45 @@ function reviewTab(refresh) {
   if (groups.length && !openWeeks.size) openWeeks.add(groups[0].m);
 
   return [
-    h('section.card',
-      secTitle('chart', 'Wochen-Verlauf'),
-      weeks.length
-        ? [
-          h('p.small.muted', 'Erledigt von „dran“ pro Woche.'),
-          h('div.wbars', { style: { gridTemplateColumns: `repeat(${weeks.length}, 1fr)` } }, plans.map(({ m, wp }) => h(`div.wbar${+m === +cur ? '.cur' : ''}`,
-            h('span.small', wp.total ? `${wp.done}/${wp.total}` : '–'),
-            h('div.wbar-track', { style: { height: `${Math.max(4, (wp.total / maxT) * 100)}%` } },
-              h('i', { style: { height: `${wp.total ? (wp.done / wp.total) * 100 : 0}%` } })),
-            h('span.small.muted', `KW${isoWeek(m)}`),
-          ))),
-        ]
-        : h('p.small.muted', 'Sobald du Kontakte einträgst, entsteht hier dein Verlauf.'),
-    ),
-    h('section.card',
-      secTitle('contact', 'Pro Ring im Rhythmus'),
-      pp.ringStats().map((r) => h(`div.part.rg-${r.n}`,
-        h('span', r.n === 0 ? pp.ringName(0) : `${r.n} · ${pp.ringName(r.n)}`),
-        h('span.muted', r.total ? `${r.ok}/${r.total}` : '–'),
-        h('div.bar', h('i', { style: { width: `${r.total ? (r.ok / r.total) * 100 : 0}%` } })),
-      )),
-    ),
-    h('section.card',
-      secTitle('heart', 'Am längsten kein Kontakt'),
-      !pp.people().length && h('p.muted', 'Noch niemand eingetragen.'),
-      h('div.plist', pp.longestWithout(8).map(({ p, since }) => h('button.pline', { onclick: () => goPerson(p.id) },
-        avatar(p),
-        h('span.pl-main', h('b', p.name), h('span.small.muted.block', pp.ringName(pp.ringOf(p)))),
-        h('span.since', since == null ? 'noch nie' : since === 0 ? 'heute' : `seit ${since} ${since === 1 ? 'Tag' : 'Tagen'}`),
-        h('span.chev-r', icon('back', 16)),
-      ))),
-    ),
-    h('section.card',
-      secTitle('pen', 'Kontakt-Tagebuch'),
+    box('verlauf', 'chart', 'Wochen-Verlauf', null, weeks.length
+      ? [
+        h('div.trend-stats',
+          h('span', h('b', avg != null ? `${avg}%` : '–'), 'Ø erledigt'),
+          h('span', h('b', totalContacts), 'Kontakte'),
+          h('span', h('b', rows.length ? (totalContacts / rows.length).toLocaleString('de-DE', { maximumFractionDigits: 1 }) : '–'), 'pro Woche'),
+        ),
+        trendChart(rows),
+      ]
+      : h('p.small.muted', 'Sobald du Kontakte einträgst, entsteht hier dein Verlauf.'), refresh),
+    box('reach', 'heart', 'Melde dich mal wieder', reach.length, [
+      h('p.small.muted', 'Nach deinem eigenen Rhythmus ist es hier schon eine Weile her – ganz ohne Druck.'),
+      reach.length
+        ? h('div.plist', reach.map(({ p, s }) => h('button.pline', { onclick: () => goPerson(p.id) },
+          avatar(p),
+          h('span.pl-main', h('b', p.name), h('span.small.muted.block', `${pp.ringName(pp.ringOf(p))} · ${pp.rhythmShort(p.rhythm)}${pp.prio(p) === 'warte' ? ' · Warteliste' : ''}`)),
+          h('span.since.over', s.since == null ? 'noch nie' : `seit ${s.since} Tagen`),
+          h('span.chev-r', icon('back', 16)),
+        )))
+        : h('p.calm-ok', icon('check', 18), 'Alle sind in deinem Rhythmus. Schön!'),
+    ], refresh),
+    box('ringe', 'contact', 'Pro Ring im Rhythmus', null, pp.ringStats().map((r) => h(`div.part.rg-${r.n}`,
+      h('span', r.n === 0 ? pp.ringName(0) : `${r.n} · ${pp.ringName(r.n)}`),
+      h('span.muted', r.total ? `${r.ok}/${r.total}` : '–'),
+      h('div.bar', h('i', { style: { width: `${r.total ? (r.ok / r.total) * 100 : 0}%` } })),
+    )), refresh),
+    box('tagebuch', 'pen', 'Kontakt-Tagebuch', log.length || null, [
       !groups.length && h('p.muted', `Keine Kontakte in den letzten ${logWeeks} Wochen eingetragen.`),
       groups.map((g) => {
-        const isOpen = openWeeks.has(g.m);
-        return h(`div.tl-week${isOpen ? '.open' : ''}`,
+        const o = openWeeks.has(g.m);
+        return h(`div.tl-week${o ? '.open' : ''}`,
           h('button.tl-head', {
             onclick: () => {
-              if (isOpen) openWeeks.delete(g.m);
+              if (o) openWeeks.delete(g.m);
               else openWeeks.add(g.m);
               refresh();
             },
           }, h('b', `KW ${isoWeek(fromIso(g.m))}`), h('span.muted', `${fmtShort(fromIso(g.m))}–${fmtShort(addDays(fromIso(g.m), 6))}`), h('span.count', g.list.length), h('span.chev', icon('back', 16))),
-          isOpen && h('div.timeline', g.list.map((e) => h('div.tl-item',
+          o && h('div.timeline', g.list.map((e) => h('div.tl-item',
             h(`span.tl-dot.rg-${pp.ringOf(e.p)}`, icon(pp.KINDS[e.art].icon, 13)),
             h('div.tl-body',
               h('div.tl-top', h('b', e.p.name), h('span.small.muted', `${pp.kindName(e.art)} · ${dayLabel(e.date)}`)),
@@ -524,7 +614,7 @@ function reviewTab(refresh) {
           refresh();
         },
       }, 'Ältere Wochen anzeigen'),
-    ),
+    ], refresh),
   ];
 }
 
@@ -550,9 +640,12 @@ function personView(id, refresh) {
     ),
     s.plan && h('section.card.plan-card',
       secTitle('calendar', 'Geplant'),
-      h('p', h('b', `${pp.kindName(s.plan.art)} · ${dayLabel(s.plan.date)}`)),
+      h('p', h('b', planText(s.plan))),
       s.plan.note && h('p.small.muted', s.plan.note),
-      h('button.link', { onclick: () => { pp.clearPlan(id); refresh(); } }, 'Plan entfernen'),
+      h('div.buttons',
+        h('button.btn.ghost.sm', { onclick: () => toCalendar([{ p, plan: s.plan }]) }, icon('calendar', 16), 'In Apple Kalender'),
+        h('button.btn.ghost.sm', { onclick: () => { pp.clearPlan(id); refresh(); } }, 'Plan entfernen'),
+      ),
     ),
     p.notes && h('section.card', secTitle('pen', 'Notizen'), h('p.notes', p.notes)),
     h('section.card',
