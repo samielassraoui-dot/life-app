@@ -1,5 +1,6 @@
 // Bereich Körper: Tagesansicht, Wochenplan-Import, Ziele.
 import * as body from '../body.js';
+import * as ln from '../learn.js';
 import { lineChart, weekChart } from '../chart.js';
 import { h, icon, toast, iso, fromIso, addDays, weekStart, fmtLong, fmtShort, WD_SHORT, saveFile, isoWeek, sheet, swipeLeft } from '../ui.js';
 
@@ -652,21 +653,21 @@ function importView(refresh) {
   function check() {
     msg.textContent = '';
     try {
-      pendingPlan = body.parsePlan(area.value);
+      pendingPlan = ln.isLernplan(area.value) ? ln.parseLernplan(area.value) : body.parsePlan(area.value);
     } catch (e) {
       pendingPlan = null;
       msg.textContent = e.message;
       preview.replaceChildren();
       return;
     }
-    preview.replaceChildren(planPreview(pendingPlan));
+    preview.replaceChildren(pendingPlan.typ === 'lernplan' ? lernplanPreview(pendingPlan) : planPreview(pendingPlan));
   }
 
   return h('div.view.a-koerper',
     back(),
     h('header.hero', h('h1', 'Wochenplan importieren')),
     h('section.card',
-      h('p.muted', 'Kopiere den Code-Block aus deinem Claude-Chat und füge ihn hier ein. Essens- und Trainingsplan einzeln nacheinander.'),
+      h('p.muted', 'Kopiere den Code-Block aus deinem Claude-Chat und füge ihn hier ein. Essens-, Trainings- und Lernplan einzeln nacheinander.'),
       area,
       msg,
       h('div.buttons',
@@ -690,6 +691,7 @@ function importView(refresh) {
       h('div.buttons',
         h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_MEALS) }, 'Vorlage Essensplan kopieren'),
         h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_TRAINING) }, 'Vorlage Trainingsplan kopieren'),
+        h('button.btn.ghost', { onclick: () => copy(ln.TEMPLATE_LERNPLAN) }, 'Vorlage Lernplan kopieren'),
       ),
     ),
   );
@@ -702,6 +704,32 @@ async function copy(text) {
   } catch {
     toast('Kopieren hat nicht geklappt', 'error');
   }
+}
+
+function lernplanPreview(plan) {
+  const end = addDays(plan.monday, 6);
+  const replaces = Object.keys(plan.felder).some((f) => ln.goal(plan.monday, f));
+  return h('section.card',
+    h('p.label', `Lernplan · ${fmtShort(plan.monday)}–${fmtShort(end)}`),
+    h('div.preview',
+      ln.FIELDS.map((f) => {
+        const g = plan.felder[f.id];
+        return h('div.prow', h('b', f.short), h('span.muted', g ? `${g.ziel} · ${g.einheiten} Einheiten${g.schritte.length ? ` · ${g.schritte.length} Schritte` : ''}${plan.fokus === f.id ? ' · Fokus' : ''}` : 'nicht im Plan – bleibt wie es ist'));
+      }),
+      plan.termine.map((t) => h('div.prow', h('b', fmtShort(fromIso(t.datum))), h('span.muted', `${t.titel} (${ln.fieldName(t.feld)})`))),
+    ),
+    replaces && h('p.small.muted', 'Für einige Felder gibt es schon ein Ziel – es wird ersetzt.'),
+    h('div.buttons',
+      h('button.btn.primary', {
+        onclick: () => {
+          ln.applyLernplan(plan);
+          pendingPlan = null;
+          toast('Lernplan übernommen');
+          location.hash = '#/leistung/woche';
+        },
+      }, 'Übernehmen'),
+    ),
+  );
 }
 
 function planPreview(plan) {

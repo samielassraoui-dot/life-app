@@ -8,6 +8,7 @@ import * as store from './store.js';
 import * as body from './body.js';
 import * as mind from './mind.js';
 import * as pp from './people.js';
+import * as ln from './learn.js';
 import { AREAS, byId } from './areas.js';
 import { iso, fromIso, addDays, weekStart, isoWeek, fmtShort, uid, WD_SHORT } from './ui.js';
 
@@ -70,7 +71,7 @@ export function reviewMonday(now = new Date()) {
 // Teile pro Bereich (aus den Tagesdaten) + Wochenziele. Jeder Teil zählt gleich viel.
 // withGoals=false für die laufende Woche: Ziele werden erst im Review abgehakt.
 export function areaScore(area, monday, { withGoals = true } = {}) {
-  const PARTS = { koerper: body.weekParts, sinn: mind.weekParts, contact: pp.weekParts };
+  const PARTS = { koerper: body.weekParts, sinn: mind.weekParts, contact: pp.weekParts, leistung: ln.weekParts };
   const parts = PARTS[area] ? PARTS[area](monday) : [];
   const g = withGoals ? goals(monday, area) : [];
   if (g.length) parts.push({ label: 'Wochenziele', done: g.filter((x) => x.done).length, total: g.length });
@@ -132,6 +133,25 @@ function sinnLines(monday) {
   return lines;
 }
 
+function leistungLines(monday) {
+  const lines = [];
+  const fk = ln.fokus(monday);
+  for (const f of ln.FIELDS) {
+    const g = ln.goal(monday, f.id);
+    const units = ln.unitsOfWeek(monday, f.id);
+    if (!g && !units.length) continue;
+    const parts = [`${units.length}${g?.einheiten ? `/${g.einheiten}` : ''} ${g?.einheiten || units.length !== 1 ? 'Einheiten' : 'Einheit'}`];
+    if (g?.schritte.length) parts.push(`${g.schritte.filter((s) => s.done).length}/${g.schritte.length} Schritte`);
+    if (g && g.status !== 'offen') parts.push(ln.STATUS[g.status]);
+    lines.push(`- ${f.name}${fk === f.id ? ' (Fokus)' : ''}: ${g ? `${g.ziel} – fertig, wenn ${g.fertig_wenn} · ` : ''}${parts.join(' · ')}`);
+    const notes = units.filter((u) => u.notiz).map((u) => u.notiz);
+    if (notes.length) lines.push(`  Gelernt: ${notes.join(' | ')}`);
+  }
+  const soon = ln.termine().filter((t) => ln.daysUntil(t.datum) >= 0 && ln.daysUntil(t.datum) <= 30);
+  if (soon.length) lines.push(`- Termine: ${soon.map((t) => `${t.titel} (${fmtShort(fromIso(t.datum))}, ${ln.countdown(t.datum)})`).join(', ')}`);
+  return lines;
+}
+
 function contactLines(monday) {
   const lines = [];
   const end = iso(addDays(monday, 6));
@@ -162,6 +182,7 @@ export function exportText(monday, only = null) {
     if (a.id === 'koerper') out.push(...koerperLines(monday));
     if (a.id === 'sinn') out.push(...sinnLines(monday));
     if (a.id === 'contact') out.push(...contactLines(monday));
+    if (a.id === 'leistung') out.push(...leistungLines(monday));
     out.push(...goalLines(monday, a.id));
     out.push('');
   }

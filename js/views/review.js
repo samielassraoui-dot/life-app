@@ -129,6 +129,7 @@ function stepZiele(go, refresh) {
       const open = week.goals(monday, a.id).filter((g) => !g.done).map((g) => g.text);
       return h(`section.card.a-${a.id}`,
         h('div.sec-title', h('span.sec-icon', icon(a.id, 18)), h('h2', a.name)),
+        a.id === 'leistung' && h('a.btn.ghost.full.lr-link', { href: '#/leistung/review' }, 'Lernziele pro Feld bewerten & festlegen →'),
         goalEditor(next, a.id, refresh, open),
       );
     }),

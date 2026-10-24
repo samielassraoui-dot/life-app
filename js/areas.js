@@ -37,6 +37,7 @@ export const AREAS = [
     tab: 'Leistung',
     goal: 'Fachlich wachsen und das Studium erfolgreich abschließen',
     stage: 6,
+    ready: true,
     coming: [
       'Vier Lernfelder: SAP HCM Customizing, Payroll, Uni, Englisch',
       '„Heute gelernt“ mit einem Tipp abhaken',
