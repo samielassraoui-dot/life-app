@@ -12,7 +12,7 @@
 //   weight:<datum>          Morgengewicht in kg
 
 import * as store from './store.js';
-import { iso, fromIso, addDays, weekStart, uid } from './ui.js';
+import { iso, fromIso, addDays, weekStart, uid, pastDays } from './ui.js';
 
 export const DEFAULT_TARGETS = { kcal: 2900, protein: 150, kh: 380, fett: 85 };
 
@@ -260,18 +260,6 @@ export function weekAvg(monday) {
 }
 
 // ---------- Fortschritt ----------
-
-// Tage einer Woche bis heute (vergangene Wochen: alle 7).
-function pastDays(monday) {
-  const today = iso();
-  const out = [];
-  for (let i = 0; i < 7; i++) {
-    const d = iso(addDays(monday, i));
-    if (d > today) break;
-    out.push(d);
-  }
-  return out;
-}
 
 // Erledigt / geplant pro Bestandteil – Grundlage für die automatische Zielerreichung.
 export function weekParts(monday) {

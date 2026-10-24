@@ -552,3 +552,50 @@ textarea.input.rv-text { resize: vertical; min-height: 84px; line-height: 1.4; }
 .rv-goals .rv-q { padding: 8px 0 2px; }
 .rv-goals .check:first-of-type { border-top: 0; }
 .card > .hist-row + .btn { margin-top: 12px; }
+
+.sec-toggle { width: 100%; border: 0; background: none; font: inherit; color: inherit; padding: 0; cursor: pointer; text-align: left; }
+.chev { display: inline-grid; place-items: center; color: var(--muted); transform: rotate(-90deg); transition: transform .2s; }
+.collapsible.open .chev { transform: rotate(90deg); }
+.buttons.split > * { flex: 1; }
+
+/* ---------- Stufe 4: Reflexion & Sinn ---------- */
+
+.sinn-hero { box-shadow: 0 10px 30px rgba(130, 120, 220, .25); }
+.sinn-line { text-align: center; margin-top: 12px; font-size: 15px; opacity: .95; }
+.sinn-pills { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 12px; }
+.sinn-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 650; padding: 5px 10px; border-radius: 99px; background: rgba(255, 255, 255, .18); color: rgba(255, 255, 255, .85); }
+.sinn-pill.on { background: #fff; color: var(--c); }
+
+.check.big { border-top: 0; padding: 4px 0; }
+.check.big .box { width: 38px; height: 38px; border-radius: 12px; }
+.check.big .check-name b { font-size: 17px; }
+.check.big.done .check-name { text-decoration: none; color: var(--text); }
+
+.aff { margin: 4px 0 0; padding: 18px 18px; border-radius: 16px; background: var(--c-soft); color: var(--text);
+  font-size: 19px; line-height: 1.45; font-weight: 600; letter-spacing: -.005em; text-align: center; font-style: italic; }
+.btn.done-btn { background: var(--ok-soft); color: var(--ok); }
+.aff-item { padding: 10px 2px; font-size: 15px; }
+
+.scale5wrap { display: flex; flex-direction: column; gap: 4px; }
+.scale5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.scale5 .scale-btn { height: 48px; font-size: 17px; border-radius: 14px; }
+.scale-ends { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); padding: 0 4px; }
+
+.jq > span { color: var(--text); font-size: 15px; font-weight: 650; }
+textarea.input.journal { resize: vertical; min-height: 64px; line-height: 1.4; }
+.card > .jq + .jq { margin-top: 14px; }
+
+.mw { display: flex; flex-direction: column; gap: 6px; }
+.mw-row { display: grid; grid-template-columns: 70px 1fr; align-items: end; gap: 8px; }
+.mw-label { font-size: 13px; font-weight: 650; color: var(--muted); padding-bottom: 20px; }
+.mw-days .mw-label { padding: 0; }
+.mw-bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.mw-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 12px; font-weight: 650; }
+.mw-cell.empty { color: var(--muted); }
+.mw-track { width: 100%; max-width: 26px; height: 48px; border-radius: 8px; background: var(--c-soft); display: flex; align-items: flex-end; overflow: hidden; }
+.mw-track i { display: block; width: 100%; background: var(--c); border-radius: 8px 8px 4px 4px; transition: height .3s; }
+.mw-day { text-align: center; font-size: 12px; color: var(--muted); }
+.mw-day.today { color: var(--c); font-weight: 750; }
+.mw-parts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.mw-part { display: flex; flex-direction: column; align-items: center; text-align: center; font-size: 11.5px; color: var(--muted); padding: 8px 2px; border-radius: 12px; background: var(--bg); line-height: 1.25; }
+.mw-part b { font-size: 16px; color: var(--text); }

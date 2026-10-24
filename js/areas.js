@@ -23,6 +23,7 @@ export const AREAS = [
     tab: 'Sinn',
     goal: 'Mehr Ruhe, Selbstwert und Selbstvertrauen – bewusst leben',
     stage: 4,
+    ready: true,
     coming: [
       'Meditation abhaken',
       'Eine Affirmation am Tag',

@@ -9,6 +9,8 @@ import * as settings from './views/settings.js';
 import * as koerper from './views/koerper.js';
 import * as review from './views/review.js';
 import * as woche from './views/woche.js';
+import * as sinn from './views/sinn.js';
+import * as mind from './mind.js';
 import { seedDefaults } from './body.js';
 
 const TABS = [{ id: 'heute', tab: 'Heute', icon: 'home' }, ...AREAS.map((a) => ({ id: a.id, tab: a.tab, icon: a.id }))];
@@ -26,6 +28,7 @@ function render() {
   let view;
   if (r === 'einstellungen') view = settings.render(render);
   else if (r === 'koerper') view = koerper.render(sub, render);
+  else if (r === 'sinn') view = sinn.render(render);
   else if (r === 'review') view = review.render(render);
   else if (r === 'woche') view = woche.render(render);
   else if (AREAS.some((a) => a.id === r)) view = area.render(r);
@@ -85,6 +88,7 @@ async function start() {
     return;
   }
   seedDefaults();
+  mind.seedDefaults();
   shell();
   render();
   paintSync();

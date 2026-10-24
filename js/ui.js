@@ -48,6 +48,9 @@ const ICONS = {
   scale: '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8 9.5a5.5 5.5 0 018 0M12 9.5l1.5-2"/>',
   bell: '<path d="M6 16.5V11a6 6 0 0112 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2.2 2.2 0 004 0"/>',
   chart: '<path d="M4 19.5h16"/><path d="M5.5 15l4-4.5 3.5 3 5.5-6.5"/>',
+  sparkle: '<path d="M12 3.5l1.8 4.9 4.7 1.6-4.7 1.6L12 16.5l-1.8-4.9L5.5 10l4.7-1.6z"/><path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.6 5.6l1.1 1.1M17.3 17.3l1.1 1.1M5.6 18.4l1.1-1.1M17.3 6.7l1.1-1.1"/>',
+  pen: '<path d="M4.5 19.5l1-4L16 5a2.1 2.1 0 013 3L8.5 18.5z"/><path d="M14 7l3 3"/>',
   download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   upload: '<path d="M12 16V5M7 9.5l5-5 5 5M5 20h14"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/>',
@@ -117,6 +120,18 @@ export function isoWeek(d = new Date()) {
   x.setUTCDate(x.getUTCDate() + 4 - day);
   const y0 = new Date(Date.UTC(x.getUTCFullYear(), 0, 1));
   return Math.ceil(((x - y0) / 86400000 + 1) / 7);
+}
+
+// Tage einer Woche bis heute (vergangene Wochen: alle 7) als 'JJJJ-MM-TT'.
+export function pastDays(monday) {
+  const today = iso();
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const d = iso(addDays(monday, i));
+    if (d > today) break;
+    out.push(d);
+  }
+  return out;
 }
 
 export const WD_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];

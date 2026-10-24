@@ -45,35 +45,56 @@ function reviewCard(now = new Date()) {
 }
 
 let histWeeks = 4;
+// Auf-/Zugeklappt merkt sich jedes Gerät selbst (reine Ansichtssache).
+let histOpen = (() => {
+  try {
+    return localStorage.getItem('life4.histOpen') === '1';
+  } catch {
+    return false;
+  }
+})();
 
 function historyCard(refresh) {
   const hist = week.ratingHistory(histWeeks);
   if (!hist.some((x) => Object.keys(x.ratings).length)) return null;
-  return h('section.card',
-    h('div.sec-title', h('span.sec-icon', icon('chart', 18)), h('h2', 'Deine Wochen'), h('a.link', { href: '#/woche' }, 'Alle Wochen')),
-    h('p.small.muted', `Deine Bewertung (1–10) der letzten ${histWeeks} Wochen. Antippen zeigt die Woche.`),
-    AREAS.map((a) => {
-      const vals = hist.map((x) => ({ label: `KW ${isoWeek(x.monday)}`, v: x.ratings[a.id] ?? null }));
-      const last = [...vals].reverse().find((v) => v.v != null);
-      const valEl = h('span.hist-val', last ? `${last.v}` : '–');
-      const sub = h('span.small.muted', last ? last.label : '');
-      return h(`div.hist-row.a-${a.id}`,
-        h('span.hist-name', a.tab),
-        sparkline(vals, {
-          onPick: (p) => {
-            valEl.textContent = p.v ?? '–';
-            sub.textContent = p.label;
+  const toggle = () => {
+    histOpen = !histOpen;
+    try {
+      localStorage.setItem('life4.histOpen', histOpen ? '1' : '0');
+    } catch { /* egal */ }
+    refresh();
+  };
+  return h(`section.card.collapsible${histOpen ? '.open' : ''}`,
+    h('button.sec-title.sec-toggle', { onclick: toggle, 'aria-expanded': histOpen },
+      h('span.sec-icon', icon('chart', 18)), h('h2', 'Deine Wochen'), h('span.chev', icon('back', 18))),
+    histOpen && [
+      h('p.small.muted', `Deine Bewertung (1–10) der letzten ${histWeeks} Wochen. Antippen zeigt die Woche.`),
+      AREAS.map((a) => {
+        const vals = hist.map((x) => ({ label: `KW ${isoWeek(x.monday)}`, v: x.ratings[a.id] ?? null }));
+        const last = [...vals].reverse().find((v) => v.v != null);
+        const valEl = h('span.hist-val', last ? `${last.v}` : '–');
+        const sub = h('span.small.muted', last ? last.label : '');
+        return h(`div.hist-row.a-${a.id}`,
+          h('span.hist-name', a.tab),
+          sparkline(vals, {
+            onPick: (p) => {
+              valEl.textContent = p.v ?? '–';
+              sub.textContent = p.label;
+            },
+          }),
+          h('span.hist-right', valEl, sub),
+        );
+      }),
+      h('div.buttons.split',
+        h('button.btn.ghost', {
+          onclick: () => {
+            histWeeks = histWeeks === 4 ? 12 : 4;
+            refresh();
           },
-        }),
-        h('span.hist-right', valEl, sub),
-      );
-    }),
-    h('button.btn.ghost.full', {
-      onclick: () => {
-        histWeeks = histWeeks === 4 ? 12 : 4;
-        refresh();
-      },
-    }, histWeeks === 4 ? 'Übersicht 12 Wochen' : 'Nur letzte 4 Wochen'),
+        }, histWeeks === 4 ? 'Übersicht 12 Wochen' : 'Nur 4 Wochen'),
+        h('a.btn.ghost', { href: '#/woche' }, 'Alle Wochen'),
+      ),
+    ],
   );
 }
 

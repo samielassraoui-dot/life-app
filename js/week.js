@@ -6,6 +6,7 @@
 
 import * as store from './store.js';
 import * as body from './body.js';
+import * as mind from './mind.js';
 import { AREAS, byId } from './areas.js';
 import { iso, fromIso, addDays, weekStart, isoWeek, fmtShort, uid, WD_SHORT } from './ui.js';
 
@@ -68,7 +69,8 @@ export function reviewMonday(now = new Date()) {
 // Teile pro Bereich (aus den Tagesdaten) + Wochenziele. Jeder Teil zählt gleich viel.
 // withGoals=false für die laufende Woche: Ziele werden erst im Review abgehakt.
 export function areaScore(area, monday, { withGoals = true } = {}) {
-  const parts = area === 'koerper' ? body.weekParts(monday) : [];
+  const PARTS = { koerper: body.weekParts, sinn: mind.weekParts };
+  const parts = PARTS[area] ? PARTS[area](monday) : [];
   const g = withGoals ? goals(monday, area) : [];
   if (g.length) parts.push({ label: 'Wochenziele', done: g.filter((x) => x.done).length, total: g.length });
   const used = parts.filter((p) => p.total > 0);
@@ -119,6 +121,15 @@ function koerperLines(monday) {
   return lines;
 }
 
+function sinnLines(monday) {
+  const s = mind.weekSummary(monday);
+  const lines = [`- ${s.parts.map((p) => `${p.label} ${p.done}/${p.total}`).join(' · ')}`];
+  const cmp = (cur, prev) => (cur != null && prev != null ? ` (Vorwoche ${de(prev, 1)})` : '');
+  if (s.mood != null) lines.push(`- Ø Stimmung ${de(s.mood, 1)}/5${cmp(s.mood, s.moodPrev)}`);
+  if (s.energy != null) lines.push(`- Ø Energie ${de(s.energy, 1)}/5${cmp(s.energy, s.energyPrev)}`);
+  return lines;
+}
+
 // only: Bereichs-ID für einen Teil-Export (z. B. nur Körper fürs Body-Projekt)
 export function exportText(monday, only = null) {
   const rv = review(monday);
@@ -130,6 +141,7 @@ export function exportText(monday, only = null) {
     const rating = rv.ratings?.[a.id];
     out.push(`${a.name.toUpperCase()}${sc.pct != null ? ` – Zielerreichung ${sc.pct} %` : ''}${rating ? ` · Bewertung ${rating}/10` : ''}`);
     if (a.id === 'koerper') out.push(...koerperLines(monday));
+    if (a.id === 'sinn') out.push(...sinnLines(monday));
     out.push(...goalLines(monday, a.id));
     out.push('');
   }
