@@ -7,6 +7,8 @@ import * as dashboard from './views/dashboard.js';
 import * as area from './views/area.js';
 import * as settings from './views/settings.js';
 import * as koerper from './views/koerper.js';
+import * as review from './views/review.js';
+import * as woche from './views/woche.js';
 import { seedDefaults } from './body.js';
 
 const TABS = [{ id: 'heute', tab: 'Heute', icon: 'home' }, ...AREAS.map((a) => ({ id: a.id, tab: a.tab, icon: a.id }))];
@@ -24,14 +26,16 @@ function render() {
   let view;
   if (r === 'einstellungen') view = settings.render(render);
   else if (r === 'koerper') view = koerper.render(sub, render);
+  else if (r === 'review') view = review.render(render);
+  else if (r === 'woche') view = woche.render(render);
   else if (AREAS.some((a) => a.id === r)) view = area.render(r);
-  else view = dashboard.render();
+  else view = dashboard.render(render);
   // Einblenden nur beim Seitenwechsel, nicht bei jedem Abhaken
   if (`${r}/${sub}` !== lastRoute) view.classList.add('enter');
   lastRoute = `${r}/${sub}`;
   main.replaceChildren(view);
   document.body.dataset.area = r;
-  for (const a of tabbar.querySelectorAll('a')) a.classList.toggle('active', a.dataset.id === r);
+  for (const a of tabbar.querySelectorAll('a')) a.classList.toggle('active', a.dataset.id === r || (a.dataset.id === 'heute' && ['review', 'woche'].includes(r)));
 }
 
 function shell() {

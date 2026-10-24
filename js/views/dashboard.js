@@ -2,6 +2,9 @@ import * as store from '../store.js';
 import * as sync from '../sync.js';
 import { AREAS } from '../areas.js';
 import * as body from '../body.js';
+import * as week from '../week.js';
+import { goalChecklist } from './goals.js';
+import { sparkline } from '../chart.js';
 import { h, icon, iso, weekDays, isoWeek, fmtLong, WD_SHORT, MONTHS, addDays, weekStart } from '../ui.js';
 
 function greeting() {
@@ -12,17 +15,72 @@ function greeting() {
   return 'Guten Abend';
 }
 
-function reviewText(now = new Date()) {
+function reviewCard(now = new Date()) {
+  const m = week.reviewMonday(now);
+  const rv = week.review(m);
   const due = addDays(weekStart(now), 6);
   due.setHours(20, 0, 0, 0);
-  if (now >= due) return { title: 'Zeit für dein Wochen-Review', sub: 'Nimm dir 10 ruhige Minuten.', now: true };
-  const days = Math.round((new Date(due.getFullYear(), due.getMonth(), due.getDate()) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
-  const when = days === 0 ? 'heute um 20:00' : days === 1 ? 'morgen um 20:00' : `in ${days} Tagen · Sonntag 20:00`;
-  return { title: 'Sonntags-Review', sub: when, now: false };
+  let title;
+  let sub;
+  let hot = false;
+  if (rv.doneAt) {
+    title = 'Review erledigt ✓';
+    sub = 'Zusammenfassung und Export ansehen';
+  } else if (+m < +weekStart(now)) {
+    title = 'Review der letzten Woche nachholen';
+    sub = 'Dauert nur ein paar Minuten';
+    hot = true;
+  } else if (now >= due || (now.getDay() === 0 && now.getHours() >= 18)) {
+    title = 'Zeit für dein Wochen-Review';
+    sub = rv.step ? 'Weitermachen, wo du warst' : 'Nimm dir 10 ruhige Minuten.';
+    hot = true;
+  } else {
+    const days = Math.round((new Date(due.getFullYear(), due.getMonth(), due.getDate()) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+    title = 'Sonntags-Review';
+    sub = days === 0 ? 'heute um 20:00' : days === 1 ? 'morgen um 20:00' : `in ${days} Tagen · Sonntag 20:00`;
+  }
+  return h(`a.card.review${hot ? '.due' : ''}`, { href: rv.doneAt ? '#/woche' : '#/review' },
+    h('span.review-icon', icon('calendar', 22)),
+    h('div', h('p.label', title), h('p.muted', sub)),
+  );
+}
+
+function goalsCard(refresh) {
+  const m = weekStart();
+  const list = goalChecklist(m, refresh);
+  return h('section.card.goals-card',
+    h('div.sec-title', h('span.sec-icon', icon('check', 18)), h('h2', 'Wochenziele'), h('a.link', { href: '#/woche' }, list ? 'Bearbeiten' : '')),
+    list || h('a.empty-goals', { href: '#/woche' }, 'Noch keine Ziele für diese Woche. Du legst sie im Sonntags-Review fest – oder ', h('b', 'jetzt hier'), '.'),
+  );
+}
+
+function historyCard() {
+  const hist = week.ratingHistory(12);
+  if (!hist.some((x) => Object.keys(x.ratings).length)) return null;
+  return h('section.card',
+    h('div.sec-title', h('span.sec-icon', icon('chart', 18)), h('h2', 'Deine Wochen'), h('a.link', { href: '#/woche' }, 'Alle Wochen')),
+    h('p.small.muted', 'Deine Bewertung (1–10) der letzten 12 Wochen. Antippen zeigt die Woche.'),
+    AREAS.map((a) => {
+      const vals = hist.map((x) => ({ label: `KW ${isoWeek(x.monday)}`, v: x.ratings[a.id] ?? null }));
+      const last = [...vals].reverse().find((v) => v.v != null);
+      const valEl = h('span.hist-val', last ? `${last.v}` : '–');
+      const sub = h('span.small.muted', last ? last.label : '');
+      return h(`div.hist-row.a-${a.id}`,
+        h('span.hist-name', a.tab),
+        sparkline(vals, {
+          onPick: (p) => {
+            valEl.textContent = p.v ?? '–';
+            sub.textContent = p.label;
+          },
+        }),
+        h('span.hist-right', valEl, sub),
+      );
+    }),
+  );
 }
 
 // Wochenfortschritt pro Bereich (weitere Bereiche folgen in den nächsten Stufen)
-const SCORES = { koerper: () => body.weekScore() };
+const score = (id) => week.areaScore(id, weekStart()).pct;
 
 // „Als Nächstes“: nächste Mahlzeit und überfällige Routinen – gegen das Vergessen.
 function nextUp(today) {
@@ -43,7 +101,7 @@ function nextUp(today) {
   );
 }
 
-export function render() {
+export function render(refresh) {
   const now = new Date();
   const name = store.get('settings.name', '');
   const days = weekDays(now);
@@ -52,7 +110,6 @@ export function render() {
   const range = first.getMonth() === last.getMonth()
     ? `${first.getDate()}.–${last.getDate()}. ${MONTHS[last.getMonth()]}`
     : `${first.getDate()}. ${MONTHS[first.getMonth()]} – ${last.getDate()}. ${MONTHS[last.getMonth()]}`;
-  const review = reviewText(now);
   const today = iso(now);
 
   return h('div.view',
@@ -72,21 +129,20 @@ export function render() {
 
     h('div.areas',
       AREAS.map((a) => {
-        const pct = SCORES[a.id] ? SCORES[a.id]() : null;
+        const pct = score(a.id);
         return h(`a.card.area.a-${a.id}`, { href: `#/${a.id}` },
           h('div.area-top', h('span.area-icon', icon(a.id, 20)), h('span.area-name', a.tab)),
           pct == null
-            ? h('p.small.muted', `ab Stufe ${a.stage}`)
-            : h('p.area-pct', pct, h('small', '% diese Woche')),
+            ? h('p.small.muted', a.ready ? 'Noch keine Daten' : `ab Stufe ${a.stage} · Ziele zählen schon`)
+            : h('p.area-pct', pct, h('small', '%'), h('span.small.muted.block', 'diese Woche')),
           h('div.bar', h('i', { style: { width: `${pct || 0}%` } })),
         );
       }),
     ),
 
-    h(`section.card.review${review.now ? '.due' : ''}`,
-      h('span.review-icon', icon('calendar', 22)),
-      h('div', h('p.label', review.title), h('p.muted', review.sub)),
-    ),
+    reviewCard(now),
+    goalsCard(refresh),
+    historyCard(),
 
     !sync.getConfig() && h('a.card.hint', { href: '#/einstellungen' },
       h('span.review-icon', icon('sync', 22)),

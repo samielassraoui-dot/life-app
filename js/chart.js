@@ -153,3 +153,35 @@ export function weekChart(points, monday, { unit = 'kg', decimals = 1, refValue 
   }
   return wrap;
 }
+
+// Kleine Verlaufszeile (1–10) für eine Bewertung über mehrere Wochen.
+// values: [{label, v|null}]; Antippen zeigt den Wert der jeweiligen Woche.
+export function sparkline(values, { min = 1, max = 10, onPick } = {}) {
+  const w = 220;
+  const ht = 44;
+  const pad = 6;
+  const step = (w - 2 * pad) / Math.max(1, values.length - 1);
+  const sx = (i) => pad + i * step;
+  const sy = (v) => pad + (1 - (v - min) / (max - min)) * (ht - 2 * pad);
+  const root = svg('svg', { viewBox: `0 0 ${w} ${ht}`, class: 'spark', preserveAspectRatio: 'none' });
+  root.append(svg('line', { x1: pad, x2: w - pad, y1: sy((min + max) / 2), y2: sy((min + max) / 2), class: 'grid' }));
+  // Linie in Abschnitten – Wochen ohne Bewertung unterbrechen sie
+  let seg = [];
+  const flush = () => {
+    if (seg.length > 1) root.append(svg('polyline', { points: seg.join(' '), class: 'line' }));
+    seg = [];
+  };
+  values.forEach((p, i) => (p.v == null ? flush() : seg.push(`${sx(i)},${sy(p.v)}`)));
+  flush();
+  values.forEach((p, i) => {
+    if (p.v != null) root.append(svg('circle', { cx: sx(i), cy: sy(p.v), r: i === values.length - 1 ? 4 : 2.8, class: 'avg' }));
+  });
+  if (onPick) {
+    root.addEventListener('pointerdown', (ev) => {
+      const r = root.getBoundingClientRect();
+      const i = Math.max(0, Math.min(values.length - 1, Math.round((((ev.clientX - r.left) / r.width) * w - pad) / step)));
+      onPick(values[i]);
+    });
+  }
+  return root;
+}

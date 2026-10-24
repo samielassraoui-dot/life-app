@@ -261,40 +261,83 @@ export function weekAvg(monday) {
 
 // ---------- Fortschritt ----------
 
-// Erledigt / geplant an einem Tag: Mahlzeiten, Routinen, Training (ohne Ruhetag).
-export function dayScore(date) {
-  let done = 0;
-  let total = 0;
-  meals(date).forEach((m, i) => {
-    total++;
-    if (mealStatus(date, i) === 'ja') done++;
-  });
-  for (const r of routines()) {
-    total++;
-    if (routineDone(date, r.id)) done++;
+// Tage einer Woche bis heute (vergangene Wochen: alle 7).
+function pastDays(monday) {
+  const today = iso();
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const d = iso(addDays(monday, i));
+    if (d > today) break;
+    out.push(d);
   }
-  training(date).forEach((t, i) => {
-    if (normArt(t.art) === 'ruhetag') return;
-    total++;
-    if (trainingDone(date, i)) done++;
-  });
-  return { done, total };
+  return out;
 }
 
-// Woche von Montag bis heute (bzw. Sonntag bei vergangenen Wochen), in Prozent.
-export function weekScore(ref = new Date()) {
-  const mon = weekStart(ref);
-  const today = iso();
-  let done = 0;
-  let total = 0;
-  for (let i = 0; i < 7; i++) {
-    const d = iso(addDays(mon, i));
-    if (d > today) break;
-    const s = dayScore(d);
-    done += s.done;
-    total += s.total;
+// Erledigt / geplant pro Bestandteil – Grundlage für die automatische Zielerreichung.
+export function weekParts(monday) {
+  const m = { label: 'Mahlzeiten', done: 0, total: 0 };
+  const r = { label: 'Routinen', done: 0, total: 0 };
+  const t = { label: 'Training', done: 0, total: 0 };
+  const rs = routines();
+  for (const d of pastDays(monday)) {
+    meals(d).forEach((_, i) => {
+      m.total++;
+      if (mealStatus(d, i) === 'ja') m.done++;
+    });
+    for (const x of rs) {
+      r.total++;
+      if (routineDone(d, x.id)) r.done++;
+    }
+    training(d).forEach((x, i) => {
+      if (normArt(x.art) === 'ruhetag') return;
+      t.total++;
+      if (trainingDone(d, i)) t.done++;
+    });
   }
-  return total ? Math.round((done / total) * 100) : 0;
+  return [m, r, t];
+}
+
+// Zahlen für den Wochenexport.
+export function weekSummary(monday) {
+  const days = pastDays(monday);
+  let skipped = 0;
+  let foodDays = 0;
+  const sum = { kcal: 0, protein: 0 };
+  const extrasList = [];
+  const trainings = [];
+  const weightsList = [];
+  for (const d of days) {
+    const list = meals(d);
+    list.forEach((_, i) => { if (mealStatus(d, i) === 'nein') skipped++; });
+    const ex = extras(d);
+    if (list.length || ex.length) {
+      const { eaten } = totals(d);
+      sum.kcal += eaten.kcal;
+      sum.protein += eaten.protein;
+      foodDays++;
+    }
+    for (const e of ex) extrasList.push(`${e.name} (${e.kcal} kcal)`);
+    training(d).forEach((t, i) => {
+      if (normArt(t.art) === 'ruhetag') return;
+      trainings.push({ name: trainingName(t.art) + (t.details ? ` (${t.details})` : ''), done: trainingDone(d, i), day: d });
+    });
+  }
+  for (let i = 0; i < 7; i++) {
+    const d = iso(addDays(monday, i));
+    const w = weight(d);
+    if (w) weightsList.push({ date: d, v: w });
+  }
+  return {
+    parts: weekParts(monday),
+    skipped,
+    avgKcal: foodDays ? sum.kcal / foodDays : null,
+    avgProtein: foodDays ? sum.protein / foodDays : null,
+    extras: extrasList,
+    trainings,
+    weights: weightsList,
+    weightAvg: weekAvg(monday),
+    weightPrev: weekAvg(addDays(monday, -7)),
+  };
 }
 
 // ---------- Wochenplan-Import ----------
