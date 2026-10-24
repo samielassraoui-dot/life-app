@@ -9,6 +9,8 @@
 //   tdone:<datum>:<nr>      Training erledigt
 //   routine:<id>            {name, zeit}
 //   rdone:<datum>:<id>      Routine erledigt
+//   rskip:<datum>:<id>      Routine ausgelassen
+//   tskip:<datum>:<nr>      Training ausgelassen
 //   weight:<datum>          Morgengewicht in kg
 
 import * as store from './store.js';
@@ -176,13 +178,10 @@ export function addTraining(date, t) {
 // Entfernt eine Einheit und verschiebt die Erledigt-Haken der folgenden mit.
 export function removeTraining(date, i) {
   const list = training(date);
-  const done = list.map((_, j) => trainingDone(date, j));
+  const states = list.map((_, j) => trainingState(date, j));
   list.splice(i, 1);
-  done.splice(i, 1);
-  for (let j = 0; j <= list.length; j++) {
-    if (done[j]) store.set(`tdone:${date}:${j}`, true);
-    else store.del(`tdone:${date}:${j}`);
-  }
+  states.splice(i, 1);
+  for (let j = 0; j <= list.length; j++) setTrainingState(date, j, states[j] || null);
   setTraining(date, list);
 }
 
@@ -222,6 +221,33 @@ export function saveRoutine(id, r) {
 
 export function deleteRoutine(id) {
   store.del(`routine:${id}`);
+}
+
+// Zustand eines Eintrags: 'done' | 'skip' | null – setzt das jeweils andere zurück.
+export function routineState(date, id) {
+  if (store.get(`rdone:${date}:${id}`)) return 'done';
+  if (store.get(`rskip:${date}:${id}`)) return 'skip';
+  return null;
+}
+
+export function setRoutineState(date, id, st) {
+  if (st === 'done') store.set(`rdone:${date}:${id}`, true);
+  else store.del(`rdone:${date}:${id}`);
+  if (st === 'skip') store.set(`rskip:${date}:${id}`, true);
+  else store.del(`rskip:${date}:${id}`);
+}
+
+export function trainingState(date, i) {
+  if (store.get(`tdone:${date}:${i}`)) return 'done';
+  if (store.get(`tskip:${date}:${i}`)) return 'skip';
+  return null;
+}
+
+export function setTrainingState(date, i, st) {
+  if (st === 'done') store.set(`tdone:${date}:${i}`, true);
+  else store.del(`tdone:${date}:${i}`);
+  if (st === 'skip') store.set(`tskip:${date}:${i}`, true);
+  else store.del(`tskip:${date}:${i}`);
 }
 
 export function routineDone(date, id) {

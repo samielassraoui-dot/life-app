@@ -1,11 +1,12 @@
 // Bereich Körper: Tagesansicht, Wochenplan-Import, Ziele.
 import * as body from '../body.js';
 import { lineChart, weekChart } from '../chart.js';
-import { h, icon, toast, iso, fromIso, addDays, weekStart, fmtLong, fmtShort, WD_SHORT, saveFile, isoWeek } from '../ui.js';
+import { h, icon, toast, iso, fromIso, addDays, weekStart, fmtLong, fmtShort, WD_SHORT, saveFile, isoWeek, sheet, swipeLeft } from '../ui.js';
 
 let day = iso();
 let dayIsToday = true;     // springt bei neuem Tag automatisch mit
 let editRoutines = false;
+let editTraining = false;
 let showExtra = false;
 let showTraining = false;
 let chartMode = 'woche';
@@ -14,6 +15,7 @@ let pendingPlan = null;
 const n = (v) => Math.round(v).toLocaleString('de-DE');
 const kg = (v) => v.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const parseNum = (s) => Number(String(s).replace(',', '.').trim()) || 0;
+const nowTime = () => new Date().toTimeString().slice(0, 5);
 
 export function render(sub, refresh) {
   if (sub === 'import') return importView(refresh);
@@ -30,33 +32,104 @@ function secTitle(ic, text, right) {
   return h('div.sec-title', h('span.sec-icon', icon(ic, 18)), h('h2', text), right || null);
 }
 
-// ---------- Tagesansicht ----------
+// ---------- Aufklappbare Boxen ----------
+// Standard: offen, solange es offene Einträge gibt. Manuell gewählter Zustand wird
+// pro Box und Tag gemerkt (nur auf diesem Gerät).
 
-function dayView(refresh) {
-  return h('div.view.a-koerper',
-    hero(refresh),
-    mealsCard(refresh),
-    routinesCard(refresh),
-    trainingCard(refresh),
-    weightCard(refresh),
-    h('div.tools',
-      h('a.tool', { href: '#/koerper/import' }, h('span.tool-icon', icon('upload', 20)), h('span', 'Wochenplan', h('br'), 'importieren')),
-      h('button.tool', { onclick: calendarExport }, h('span.tool-icon', icon('bell', 20)), h('span', 'Erinnerungen', h('br'), 'in Kalender')),
-      h('a.tool', { href: '#/koerper/ziele' }, h('span.tool-icon', icon('settings', 20)), h('span', 'Ziele', h('br'), 'anpassen')),
-    ),
+const OPEN_KEY = 'life4.koerperOpen';
+
+function openMap() {
+  try {
+    return JSON.parse(localStorage.getItem(OPEN_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function rememberOpen(id, val) {
+  try {
+    const m = openMap();
+    m[`${id}:${day}`] = val;
+    const keys = Object.keys(m);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 60))) delete m[k];
+    localStorage.setItem(OPEN_KEY, JSON.stringify(m));
+  } catch { /* egal */ }
+}
+
+function kbox(id, ic, title, { info, pct, autoOpen }, ...content) {
+  const open = openMap()[`${id}:${day}`] ?? autoOpen;
+  const head = h('button.kbox-head', { 'aria-expanded': open },
+    h('span.sec-icon', icon(ic, 18)),
+    h('span.kbox-title', h('h2', title), info && h('span.kbox-info', info)),
+    h('span.kbox-chev', icon('back', 18)),
+  );
+  const sec = h(`section.card.kbox${open ? '.open' : ''}`,
+    head,
+    pct != null && h('div.kbox-bar', h('i', { style: { width: `${Math.min(100, pct)}%` } })),
+    h('div.kbox-body', h('div.kbox-inner', content)),
+  );
+  head.addEventListener('click', () => {
+    const o = !sec.classList.contains('open');
+    sec.classList.toggle('open', o);
+    head.setAttribute('aria-expanded', o);
+    rememberOpen(id, o);
+  });
+  return sec;
+}
+
+// Status-Symbol links: offen (Kreis), erledigt (Haken), ausgelassen (Strich)
+const stIcon = (st) => h(`span.st-ic${st ? `.${st}` : ''}`, st === 'done' ? icon('check', 16) : st === 'skip' ? icon('close', 14) : null);
+
+// Einzeilige Darstellung erledigter / ausgelassener Einträge
+function compactLine(time, name, st, extra = null) {
+  return h(`div.cline${st === 'skip' ? '.skipped' : ''}`,
+    h('span.cl-time', time || '–'),
+    h('span.cl-name', name),
+    extra,
+    st === 'skip' ? h('span.badge-skip', 'ausgelassen') : stIcon('done'),
   );
 }
 
-function ring(value, goal) {
+// ---------- Tagesansicht ----------
+
+function dayView(refresh) {
+  return h('div.view.a-koerper.kp-view',
+    hero(refresh),
+    mealsBox(refresh),
+    routinesBox(refresh),
+    trainingBox(refresh),
+    weightBox(refresh),
+  );
+}
+
+function ring(eaten, goal) {
   const r = 52;
   const c = 2 * Math.PI * r;
-  const pct = goal ? Math.min(1, value / goal) : 0;
+  const pct = goal ? Math.min(1, eaten / goal) : 0;
+  const left = goal - eaten;
   const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   s.setAttribute('viewBox', '0 0 128 128');
   s.setAttribute('class', 'ring');
   s.innerHTML = `<circle cx="64" cy="64" r="${r}" class="ring-track"/>`
     + `<circle cx="64" cy="64" r="${r}" class="ring-val" stroke-dasharray="${c * pct} ${c}" transform="rotate(-90 64 64)"/>`;
-  return h('div.ring-wrap', s, h('div.ring-text', h('b', n(value)), h('span', `von ${n(goal)}`), h('span', 'kcal')));
+  return h('div.ring-wrap', s, h('div.ring-text',
+    h('b', left >= 0 ? n(left) : `+${n(-left)}`),
+    h('span.ring-unit', left >= 0 ? 'kcal übrig' : 'kcal drüber'),
+    h('span.ring-sub', `${n(eaten)} von ${n(goal)}`),
+  ));
+}
+
+function openMenu(refresh) {
+  const item = (ic, title, sub, fn) => h('button.menu-item', { onclick: fn },
+    h('span.sec-icon', icon(ic, 18)), h('span', h('b', title), h('span.small.muted.block', sub)), h('span.chev-r', icon('back', 16)));
+  const sh = sheet('Körper',
+    h('div.menu',
+      item('upload', 'Wochenplan importieren', 'Essens- oder Trainingsplan aus Claude einfügen', () => { sh.close(); location.hash = '#/koerper/import'; }),
+      item('bell', 'Erinnerungen in Kalender', 'Mahlzeiten der Woche als Kalenderdatei', () => { sh.close(); calendarExport(); }),
+      item('settings', 'Ziele anpassen', 'Kalorien, Protein, Kohlenhydrate, Fett', () => { sh.close(); location.hash = '#/koerper/ziele'; }),
+      item('list', 'Routinen bearbeiten', 'Hinzufügen, löschen, Uhrzeiten', () => { sh.close(); editRoutines = true; rememberOpen('routinen', true); refresh(); }),
+    ),
+  );
 }
 
 function hero(refresh) {
@@ -70,7 +143,10 @@ function hero(refresh) {
   };
   const label = day === today ? 'Heute' : day === iso(addDays(new Date(), 1)) ? 'Morgen' : day === iso(addDays(new Date(), -1)) ? 'Gestern' : WD_SHORT[fromIso(day).getDay()];
   const t = body.targets();
-  const { eaten, planned } = body.totals(day);
+  const { eaten } = body.totals(day);
+  const planKcal = body.meals(day).reduce((s, m) => s + (m.kcal || 0), 0);
+  const extraKcal = body.extras(day).reduce((s, e) => s + (e.kcal || 0), 0);
+  const order = ['protein', 'kh', 'fett'];
 
   return h('section.kp-hero',
     h('div.daynav',
@@ -83,95 +159,123 @@ function hero(refresh) {
         },
       }, h('b', label), h('span', fmtLong(fromIso(day)))),
       h('button.navbtn.flip', { onclick: () => go(1), 'aria-label': 'Nächster Tag' }, icon('back', 20)),
+      h('button.navbtn.gear', { onclick: () => openMenu(refresh), 'aria-label': 'Einstellungen Körper' }, icon('gear', 21)),
     ),
     h('div.kp-sum',
       ring(eaten.kcal, t.kcal),
       h('div.kp-macros',
-        body.MACROS.slice(1).map((m) => h('div.kp-macro',
-          h('div.row.between', h('span', m.name), h('span', h('b', n(eaten[m.id])), ` / ${n(t[m.id])} g`)),
-          h('div.hbar', h('i', { style: { width: `${Math.min(100, t[m.id] ? (eaten[m.id] / t[m.id]) * 100 : 0)}%` } })),
-        )),
+        order.map((id) => {
+          const m = body.MACROS.find((x) => x.id === id);
+          return h(`div.kp-macro${id === 'protein' ? '.main' : ''}`,
+            h('div.row.between', h('span', m.name), h('span', h('b', n(eaten[id])), ` / ${n(t[id])} g`)),
+            h('div.hbar', h('i', { style: { width: `${Math.min(100, t[id] ? (eaten[id] / t[id]) * 100 : 0)}%` } })),
+          );
+        }),
       ),
     ),
-    planned.kcal > 0 && h('p.kp-plan', `Geplant: ${n(planned.kcal)} kcal · ${n(planned.protein)} g Protein`),
+    (planKcal > 0 || extraKcal > 0) && h('p.kp-plan', h('span', `Plan ${n(planKcal)} kcal`), h('span.plus', '+'), h('span', `Spontan ${n(extraKcal)} kcal`)),
   );
 }
 
-function mealsCard(refresh) {
-  const list = body.meals(day);
-  const extras = body.extras(day);
-  const next = day === iso() ? body.nextMeal(day) : null;
+// ---------- Mahlzeiten ----------
 
-  const rows = list.map((m, i) => {
-    const s = body.mealStatus(day, i);
-    const cat = body.category(m);
-    const set = (v) => {
-      body.setMealStatus(day, i, s === v ? null : v);
-      refresh();
-    };
-    return h(`div.meal.cat-${cat}${s === 'ja' ? '.eaten' : ''}${s === 'nein' ? '.skipped' : ''}`,
-      h('div.meal-main',
-        h('div.meal-meta',
-          h('span.cat', body.catName(cat)),
-          h('span.time', m.zeit || ''),
-          next && next.i === i && h('span.nexttag', 'als Nächstes'),
-        ),
-        h('p.meal-name', m.name),
-        h('p.small.muted', [m.menge, `${n(m.kcal)} kcal`, `${n(m.protein)} P`, `${n(m.kh)} KH`, `${n(m.fett)} F`].filter(Boolean).join(' · ')),
-      ),
-      h('div.meal-btns',
-        h('button.pill.yes', { onclick: () => set('ja'), 'aria-pressed': s === 'ja', 'aria-label': 'Gegessen' }, icon('check', 22)),
-        h('button.pill.no', { onclick: () => set('nein'), 'aria-pressed': s === 'nein', 'aria-label': 'Nicht gegessen' }, icon('close', 20)),
-      ),
-    );
-  });
+// Uhrzeit aus dem Text erkennen: „Döner um 13 Uhr“, „Riegel 15:30“
+function detectTime(text) {
+  const m = text.match(/(?:\bum\s*)?\b([01]?\d|2[0-3])(?:[:.]([0-5]\d))?\s*uhr\b/i) || text.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/);
+  if (!m) return null;
+  return {
+    time: `${String(m[1]).padStart(2, '0')}:${m[2] || '00'}`,
+    rest: text.replace(m[0], '').replace(/\s{2,}/g, ' ').replace(/\s+([,.])/g, '$1').trim(),
+  };
+}
 
-  const extraRows = extras.map((e) => h('div.meal.cat-spontan.eaten',
-    h('div.meal-main',
-      h('div.meal-meta', h('span.cat', 'Spontan'), h('span.time', e.zeit || '')),
-      h('p.meal-name', e.name),
-      h('p.small.muted', `${n(e.kcal)} kcal · ${n(e.protein)} P · ${n(e.kh)} KH · ${n(e.fett)} F`),
-    ),
-    h('div.meal-btns',
-      h('button.pill.del', {
-        'aria-label': 'Löschen',
-        onclick: () => {
-          if (!confirm(`„${e.name}“ entfernen?`)) return;
+function mealsBox(refresh) {
+  const today = iso();
+  const planned = body.meals(day).map((m, i) => ({ kind: 'plan', i, m, zeit: m.zeit || '', st: body.mealStatus(day, i) }));
+  const extras = body.extras(day).map((e) => ({ kind: 'extra', e, zeit: e.zeit || '' }));
+  const all = [...planned, ...extras].sort((a, b) => (a.zeit || '99').localeCompare(b.zeit || '99'));
+  const done = planned.filter((x) => x.st === 'ja').length;
+  const open = planned.filter((x) => !x.st);
+  const next = day === today ? open[0] : null;
+  const info = !planned.length
+    ? (extras.length ? `${extras.length} spontan` : 'noch kein Plan')
+    : `${done}/${planned.length}${open.length ? ` · nächste: ${open[0].m.name} ${open[0].zeit}` : ' · alles erledigt'}`;
+
+  const rows = all.map((x) => {
+    if (x.kind === 'extra') {
+      const e = x.e;
+      return swipeLeft(compactLine(e.zeit, e.name, 'done', h('span.cl-meta', h('span.tag', 'spontan'), `${n(e.kcal)} kcal`)), {
+        label: 'Löschen',
+        onSwipe: () => {
           body.deleteExtra(e.key);
           refresh();
+          toast(`„${e.name}“ entfernt`, '', { label: 'Rückgängig', fn: () => { const { key, ...data } = e; body.addExtra(day, data); refresh(); } });
         },
-      }, icon('trash', 18)),
-    ),
-  ));
+      });
+    }
+    const { m, i, st } = x;
+    const cat = body.category(m);
+    const set = (v) => {
+      body.setMealStatus(day, i, v);
+      refresh();
+    };
+    if (st) {
+      return swipeLeft(compactLine(m.zeit, m.name, st === 'ja' ? 'done' : 'skip', st === 'ja' ? h('span.cl-meta', `${n(m.kcal)} kcal`) : null), {
+        label: st === 'ja' ? 'Ausgelassen' : 'Offen',
+        onTap: () => set(null),
+        onSwipe: () => set(st === 'ja' ? 'nein' : null),
+      });
+    }
+    const card = h(`div.mi.cat-${cat}${next === x ? '.next' : ''}`,
+      stIcon(null),
+      h('div.mi-main',
+        h('div.meal-meta', h('span.cat', body.catName(cat)), h('span.time', m.zeit || ''), next === x && h('span.nexttag', 'als Nächstes')),
+        h('p.meal-name', m.name),
+        m.menge && h('p.mi-menge', m.menge),
+        h('div.mi-macros',
+          h('b.mi-kcal', `${n(m.kcal)} kcal`),
+          h('span.mchip', `P ${n(m.protein)}`), h('span.mchip', `KH ${n(m.kh)}`), h('span.mchip', `F ${n(m.fett)}`),
+        ),
+      ),
+    );
+    return swipeLeft(card, { label: 'Auslassen', onTap: () => set('ja'), onSwipe: () => set('nein') });
+  });
 
-  const eatenCount = list.filter((_, i) => body.mealStatus(day, i) === 'ja').length;
-  return h('section.card',
-    secTitle('meal', 'Mahlzeiten', list.length > 0 && h('span.count', `${eatenCount}/${list.length}`)),
-    !list.length && h('p.muted', 'Für diesen Tag ist noch kein Essensplan da. Importiere deinen Wochenplan unten.'),
-    h('div.meals', rows, extraRows),
+  return kbox('mahlzeiten', 'meal', 'Mahlzeiten', { info, pct: planned.length ? (done / planned.length) * 100 : null, autoOpen: open.length > 0 || !planned.length },
+    !planned.length && h('p.muted', 'Für diesen Tag ist noch kein Essensplan da. Importiere ihn über das Zahnrad oben rechts.'),
+    planned.length > 0 && h('p.small.muted.khint', 'Antippen = gegessen · nach links wischen = auslassen'),
+    h('div.klist', rows),
     showExtra ? extraForm(refresh) : h('button.btn.soft.full', { onclick: () => { showExtra = true; refresh(); } }, icon('plus', 18), 'Spontan gegessen'),
   );
 }
 
 function extraForm(refresh) {
-  const now = new Date();
-  const name = h('input.input', { placeholder: 'Was hast du gegessen?' });
-  const zeit = h('input.input', { type: 'time', value: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}` });
+  const name = h('input.input', { placeholder: 'Was hast du gegessen? z. B. Döner um 13 Uhr' });
+  const zeit = h('input.input', { type: 'time', value: day === iso() ? nowTime() : '' });
+  let zeitTouched = false;
+  zeit.addEventListener('input', () => { zeitTouched = true; });
+  // Uhrzeit im Text erkennen und übernehmen
+  name.addEventListener('input', () => {
+    const d = detectTime(name.value);
+    if (d && !zeitTouched) zeit.value = d.time;
+  });
   const fields = body.MACROS.map((m) => ({ m, el: h('input.input', { inputmode: 'numeric', placeholder: m.unit }) }));
   return h('div.form',
-    h('p.small.muted', 'Schätzen reicht völlig.'),
+    h('p.small.muted', 'Schätzen reicht völlig. Die Uhrzeit wird automatisch gesetzt – oder aus dem Text erkannt.'),
     name,
     h('div.grid4', fields.map(({ m, el }) => h('label.field', h('span', m.short || m.name), el))),
     h('label.field', h('span', 'Uhrzeit'), zeit),
     h('div.buttons',
       h('button.btn.primary', {
         onclick: () => {
-          if (!name.value.trim()) return toast('Bitte kurz eintragen, was es war.');
-          const e = { zeit: zeit.value, name: name.value.trim() };
+          const d = detectTime(name.value);
+          const text = (d ? d.rest : name.value).trim();
+          if (!text) return toast('Bitte kurz eintragen, was es war.');
+          const e = { zeit: zeit.value || (d && d.time) || (day === iso() ? nowTime() : '12:00'), name: text };
           for (const { m, el } of fields) e[m.id] = Math.round(parseNum(el.value));
           body.addExtra(day, e);
           showExtra = false;
-          toast('Eingetragen');
+          toast(`Eingetragen um ${e.zeit} Uhr`);
           refresh();
         },
       }, 'Speichern'),
@@ -180,16 +284,20 @@ function extraForm(refresh) {
   );
 }
 
-function routinesCard(refresh) {
+// ---------- Routinen ----------
+
+function routinesBox(refresh) {
   const list = body.routines();
-  const doneCount = list.filter((r) => body.routineDone(day, r.id)).length;
-  const nowT = new Date().toTimeString().slice(0, 5);
+  const states = list.map((r) => ({ r, st: body.routineState(day, r.id) }));
+  const done = states.filter((x) => x.st === 'done').length;
+  const open = states.filter((x) => !x.st);
+  const next = day === iso() ? open[0] : null;
+  const info = !list.length ? 'keine Routinen' : `${done}/${list.length}${open.length ? ` · nächste: ${open[0].r.name} ${open[0].r.zeit || ''}` : ' · alles erledigt'}`;
 
   if (editRoutines) {
     const nameIn = h('input.input', { placeholder: 'Neue Routine, z. B. Omega 3' });
     const timeIn = h('input.input.time', { type: 'time', value: '08:00' });
-    return h('section.card',
-      secTitle('list', 'Routinen bearbeiten', h('button.link', { onclick: () => { editRoutines = false; refresh(); } }, 'Fertig')),
+    return kbox('routinen', 'list', 'Routinen', { info: 'bearbeiten', autoOpen: true },
       list.map((r) => h('div.editrow',
         h('input.input.time', { type: 'time', value: r.zeit || '', onchange: (e) => body.saveRoutine(r.id, { name: r.name, zeit: e.target.value }) }),
         h('input.input', { value: r.name, onchange: (e) => e.target.value.trim() && body.saveRoutine(r.id, { name: e.target.value.trim(), zeit: r.zeit }) }),
@@ -214,64 +322,79 @@ function routinesCard(refresh) {
           },
         }, icon('plus', 20)),
       ),
+      h('button.btn.primary.full', { onclick: () => { editRoutines = false; refresh(); } }, 'Fertig'),
     );
   }
 
-  return h('section.card',
-    secTitle('list', 'Routinen', h('span.row',
-      h('span.count', `${doneCount}/${list.length}`),
-      h('button.link', { onclick: () => { editRoutines = true; refresh(); } }, 'Bearbeiten'),
-    )),
-    !list.length && h('p.muted', 'Noch keine Routinen. Tippe auf „Bearbeiten“.'),
-    list.map((r) => {
-      const done = body.routineDone(day, r.id);
-      const late = !done && day === iso() && r.zeit && r.zeit < nowT;
-      return h(`button.check${done ? '.done' : ''}${late ? '.late' : ''}`, {
-        onclick: () => {
-          body.toggleRoutine(day, r.id);
-          refresh();
-        },
-      },
-      h('span.box', icon('check', 18)),
-      h('span.check-name', r.name),
-      h('span.time', r.zeit || ''));
-    }),
+  const rows = states.map((x) => {
+    const { r, st } = x;
+    const set = (v) => {
+      body.setRoutineState(day, r.id, v);
+      refresh();
+    };
+    if (st) {
+      return swipeLeft(compactLine(r.zeit, r.name, st), {
+        label: st === 'done' ? 'Auslassen' : 'Offen',
+        onTap: () => set(null),
+        onSwipe: () => set(st === 'done' ? 'skip' : null),
+      });
+    }
+    const late = day === iso() && r.zeit && r.zeit < nowTime();
+    const row = h(`div.ri${next === x ? '.next' : ''}${late ? '.late' : ''}`, stIcon(null), h('span.ri-name', r.name), h('span.ri-time', r.zeit || ''));
+    return swipeLeft(row, { label: 'Auslassen', onTap: () => set('done'), onSwipe: () => set('skip') });
+  });
+
+  return kbox('routinen', 'list', 'Routinen', { info, pct: list.length ? (done / list.length) * 100 : null, autoOpen: open.length > 0 },
+    !list.length && h('p.muted', 'Noch keine Routinen.'),
+    h('div.klist', rows),
+    h('button.link', { onclick: () => { editRoutines = true; refresh(); } }, 'Routinen bearbeiten'),
   );
 }
 
-function trainingCard(refresh) {
-  const list = body.training(day);
+// ---------- Training ----------
 
-  const items = list.map((t, i) => {
-    const art = body.normArt(t.art);
-    const remove = h('button.pill.del.small', {
+function trainingBox(refresh) {
+  const list = body.training(day);
+  const units = list.map((t, i) => ({ t, i, rest: body.normArt(t.art) === 'ruhetag', st: body.trainingState(day, i) }));
+  const active = units.filter((u) => !u.rest);
+  const done = active.filter((u) => u.st === 'done').length;
+  const open = active.filter((u) => !u.st);
+  const sym = (u) => (u.rest ? '' : u.st === 'done' ? ' ✓' : u.st === 'skip' ? ' –' : ' ○');
+  const info = !units.length ? 'nichts geplant' : units.map((u) => `${body.trainingName(u.t.art)}${sym(u)}`).join(' · ');
+
+  const rows = units.map((u) => {
+    const { t, i, st } = u;
+    const name = body.trainingName(t.art);
+    const del = editTraining && h('button.pill.del.small', {
       'aria-label': 'Entfernen',
-      onclick: (e) => {
-        e.stopPropagation();
-        if (!confirm(`${body.trainingName(t.art)} entfernen?`)) return;
+      onclick: () => {
+        if (!confirm(`${name} entfernen?`)) return;
         body.removeTraining(day, i);
         refresh();
       },
     }, icon('close', 16));
-    if (art === 'ruhetag') {
-      return h('div.rest', h('div', h('b', 'Ruhetag'), h('span.small.muted.block', t.details || 'Erholung gehört zum Muskelaufbau dazu.')), remove);
+    if (u.rest) {
+      return h('div.rest', h('div', h('b', 'Ruhetag'), h('span.small.muted.block', t.details || 'Erholung gehört zum Muskelaufbau dazu.')), del);
     }
-    const done = body.trainingDone(day, i);
-    return h('div.check-wrap',
-      h(`button.check${done ? '.done' : ''}`, {
-        onclick: () => {
-          body.toggleTraining(day, i);
-          refresh();
-        },
-      },
-      h('span.box', icon('check', 18)),
-      h('span.check-name',
-        h('b', body.trainingName(t.art)),
-        t.spontan && h('span.tag', 'spontan'),
-        t.details ? h('span.small.muted.block', t.details) : null),
-      h('span.time', t.zeit || '')),
-      remove,
-    );
+    const set = (v) => {
+      body.setTrainingState(day, i, v);
+      refresh();
+    };
+    if (editTraining) {
+      return h('div.ri', stIcon(st), h('span.ri-name', name, t.details && h('span.small.muted.block', t.details)), del);
+    }
+    if (st) {
+      return swipeLeft(compactLine(t.zeit, `${name}${t.details ? ` · ${t.details}` : ''}`, st), {
+        label: st === 'done' ? 'Auslassen' : 'Offen',
+        onTap: () => set(null),
+        onSwipe: () => set(st === 'done' ? 'skip' : null),
+      });
+    }
+    const row = h(`div.ri${open[0] === u && day === iso() ? '.next' : ''}`,
+      stIcon(null),
+      h('span.ri-name', h('b', name), t.spontan && h('span.tag', 'spontan'), t.details && h('span.small.muted.block', t.details)),
+      h('span.ri-time', t.zeit || ''));
+    return swipeLeft(row, { label: 'Auslassen', onTap: () => set('done'), onSwipe: () => set('skip') });
   });
 
   let adder;
@@ -298,20 +421,24 @@ function trainingCard(refresh) {
     adder = h('button.btn.soft.full', { onclick: () => { showTraining = true; refresh(); } }, icon('plus', 18), 'Training hinzufügen');
   }
 
-  return h('section.card',
-    secTitle('koerper', 'Training'),
-    !list.length && h('p.muted', 'Für diesen Tag ist nichts geplant.'),
-    items,
+  return kbox('training', 'koerper', 'Training', { info, pct: active.length ? (done / active.length) * 100 : null, autoOpen: open.length > 0 },
+    !units.length && h('p.muted', 'Für diesen Tag ist nichts geplant.'),
+    h('div.klist', rows),
     adder,
+    units.length > 0 && h('button.link', { onclick: () => { editTraining = !editTraining; refresh(); } }, editTraining ? 'Fertig' : 'Bearbeiten'),
   );
 }
 
-function weightCard(refresh) {
+// ---------- Gewicht ----------
+
+function weightBox(refresh) {
   const w = body.weight(day);
   const monday = weekStart(fromIso(day));
   const thisWeek = body.weekAvg(monday);
   const lastWeek = body.weekAvg(addDays(monday, -7));
   const diff = thisWeek && lastWeek ? thisWeek - lastWeek : null;
+  const logged = Array.from({ length: 7 }, (_, i) => body.weight(iso(addDays(monday, i)))).filter(Boolean).length;
+  const info = `${w ? `${kg(w)} kg` : 'noch nicht eingetragen'}${thisWeek ? ` · Ø ${kg(thisWeek)}` : ''}`;
   const input = h('input.input.weight', {
     inputmode: 'decimal',
     placeholder: '70,0',
@@ -326,8 +453,7 @@ function weightCard(refresh) {
   });
   const seg = (id, label) => h(`button.seg${chartMode === id ? '.on' : ''}`, { onclick: () => { chartMode = id; refresh(); } }, label);
 
-  return h('section.card',
-    secTitle('scale', 'Morgengewicht'),
+  return kbox('gewicht', 'scale', 'Morgengewicht', { info, pct: (logged / 7) * 100, autoOpen: !w },
     h('div.weightrow',
       h('div.weightin', input, h('span.muted', 'kg')),
       h('div.stat',

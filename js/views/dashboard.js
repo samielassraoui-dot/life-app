@@ -106,7 +106,7 @@ const score = (id) => week.areaScore(id, weekStart(), { withGoals: false }).pct;
 function nextUp(today) {
   const meal = body.nextMeal(today);
   const nowT = new Date().toTimeString().slice(0, 5);
-  const open = body.routines().filter((r) => r.zeit && r.zeit <= nowT && !body.routineDone(today, r.id));
+  const open = body.routines().filter((r) => r.zeit && r.zeit <= nowT && !body.routineState(today, r.id));
   const bdays = pp.upcomingBirthdays(1);
   if (!meal && !open.length && !bdays.length) return null;
   return h('section.card.next-up.a-koerper',

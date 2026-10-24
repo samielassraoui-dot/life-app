@@ -56,6 +56,7 @@ const ICONS = {
   phone: '<path d="M6.5 3.5h3l1.5 4-2 1.5a11 11 0 006 6l1.5-2 4 1.5v3a2 2 0 01-2 2A16 16 0 014.5 5.5a2 2 0 012-2z"/>',
   users: '<circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19.5a5.5 5.5 0 0111 0"/><circle cx="16.5" cy="9.5" r="2.6"/><path d="M15.5 14.6a4.6 4.6 0 015 4.9"/>',
   chat: '<path d="M4.5 6.5a2 2 0 012-2h11a2 2 0 012 2v8a2 2 0 01-2 2H10l-4 3.5v-3.5h0a2 2 0 01-1.5-2z"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8l1.6 2.3 2.7-.6.6 2.7 2.3 1.6-1.4 2.4 1.4 2.4-2.3 1.6-.6 2.7-2.7-.6L12 21.2l-1.6-2.3-2.7.6-.6-2.7-2.3-1.6 1.4-2.4-1.4-2.4 2.3-1.6.6-2.7 2.7.6z"/>',
   download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   upload: '<path d="M12 16V5M7 9.5l5-5 5 5M5 20h14"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/>',
@@ -193,4 +194,86 @@ export async function saveFile(blob, name, type) {
     if (e.name !== 'AbortError') toast('Speichern fehlgeschlagen', 'error');
     return false;
   }
+}
+
+// Bottom-Sheet: sheet(titel, inhalt) → { close }
+export function sheet(title, ...content) {
+  const close = () => {
+    wrap.classList.remove('show');
+    setTimeout(() => wrap.remove(), 220);
+  };
+  const wrap = h('div.sheet-wrap', { onclick: (e) => e.target === wrap && close() },
+    h('div.sheet', { role: 'dialog', 'aria-label': title },
+      h('div.sheet-grip'),
+      h('h2.sheet-title', title),
+      content,
+    ),
+  );
+  document.body.append(wrap);
+  requestAnimationFrame(() => wrap.classList.add('show'));
+  return { close };
+}
+
+// Zeile mit Tippen und Wischen nach links (z. B. „auslassen“).
+// row enthält .swl-bg (Hintergrund mit Beschriftung) und inner (die eigentliche Zeile).
+export function swipeLeft(inner, { label, onTap, onSwipe }) {
+  const row = h('div.swl-row', h('div.swl-bg', h('span', label)), inner);
+  let x0 = null;
+  let y0 = 0;
+  let dx = 0;
+  let active = false;
+  let pid = null;
+  let swallow = false;
+  inner.classList.add('swl-inner');
+  inner.addEventListener('pointerdown', (e) => {
+    x0 = e.clientX;
+    y0 = e.clientY;
+    dx = 0;
+    active = false;
+    pid = e.pointerId;
+  });
+  inner.addEventListener('pointermove', (e) => {
+    if (x0 == null) return;
+    const mx = e.clientX - x0;
+    const my = e.clientY - y0;
+    if (!active) {
+      if (mx < -12 && -mx > Math.abs(my) * 1.5) {
+        active = true;
+        row.classList.add('swiping');
+        inner.setPointerCapture(pid);
+      } else if (Math.abs(my) > 12 || mx > 12) {
+        x0 = null;
+        return;
+      } else return;
+    }
+    dx = Math.min(0, Math.max(mx, -160));
+    inner.style.transform = `translateX(${dx}px)`;
+    row.classList.toggle('armed', dx < -80);
+  });
+  const end = () => {
+    if (x0 == null) return;
+    const swiped = active && dx < -80;
+    if (active) swallow = true;
+    x0 = null;
+    active = false;
+    inner.style.transition = 'transform .2s ease';
+    inner.style.transform = '';
+    setTimeout(() => {
+      inner.style.transition = '';
+      row.classList.remove('swiping');
+    }, 210);
+    row.classList.remove('armed');
+    if (swiped) onSwipe();
+  };
+  inner.addEventListener('pointerup', end);
+  inner.addEventListener('pointercancel', end);
+  inner.addEventListener('click', (e) => {
+    if (swallow) {
+      swallow = false;
+      return;
+    }
+    if (e.target.closest('button, a, input')) return;
+    onTap?.();
+  });
+  return row;
 }
