@@ -251,7 +251,7 @@ function bannerText() {
     const text = !next.length ? 'MORGEN: KEIN PLAN' : mu ? `MORGEN: ${body.unitName(mu)}` : 'MORGEN: RUHETAG';
     return { text, phase: 'tomorrow' };
   }
-  return { text: `TRAINING: ${body.unitName(body.mainUnit(list))}`, phase: 'today' };
+  return { text: `${word}: ${body.unitName(body.mainUnit(list))}`, phase: 'today' };
 }
 
 function trainingBanner() {
