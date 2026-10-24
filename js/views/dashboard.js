@@ -1,6 +1,7 @@
 import * as store from '../store.js';
 import * as sync from '../sync.js';
 import { AREAS } from '../areas.js';
+import * as todos from './todos.js';
 import * as body from '../body.js';
 import * as week from '../week.js';
 import * as pp from '../people.js';
@@ -150,6 +151,7 @@ export function render(refresh) {
     ),
 
     nextUp(today),
+    todos.todayBox(refresh),
 
     h('div.areas',
       AREAS.map((a) => {

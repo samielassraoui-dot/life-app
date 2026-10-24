@@ -65,6 +65,7 @@ const ICONS = {
   stopwatch: '<circle cx="12" cy="13.5" r="7"/><path d="M12 13.5V10M10 3h4M12 3v3.5M18 7.5l1.5-1.5"/>',
   play: '<path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/>',
   warn: '<path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.5h.01"/>',
+  todos: '<path d="M10 6.5h10M10 12h10M10 17.5h10"/><rect x="3.5" y="4.5" width="4" height="4" rx="1"/><rect x="3.5" y="10" width="4" height="4" rx="1"/><path d="M3.8 17.6l1.3 1.3 2.4-2.6"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/>',
 };
 
@@ -280,6 +281,74 @@ export function swipeLeft(inner, { label, onTap, onSwipe }) {
     }
     if (e.target.closest('button, a, input')) return;
     onTap?.();
+  });
+  return row;
+}
+
+// Zeile mit Wischen in beide Richtungen.
+// left = nach links wischen, right = nach rechts wischen: jeweils {label, fn}
+export function swipeRow(inner, { onTap, left, right }) {
+  const bgL = h('div.sw2-bg.sw2-left', h('span', left?.label || ''));
+  const bgR = h('div.sw2-bg.sw2-right', h('span', right?.label || ''));
+  const row = h('div.sw2-row', bgR, bgL, inner);
+  let x0 = null;
+  let y0 = 0;
+  let dx = 0;
+  let active = false;
+  let pid = null;
+  let swallow = false;
+  inner.classList.add('sw2-inner');
+  inner.addEventListener('pointerdown', (e) => {
+    x0 = e.clientX;
+    y0 = e.clientY;
+    dx = 0;
+    active = false;
+    pid = e.pointerId;
+  });
+  inner.addEventListener('pointermove', (e) => {
+    if (x0 == null) return;
+    const mx = e.clientX - x0;
+    const my = e.clientY - y0;
+    if (!active) {
+      const ok = (mx < -12 && left) || (mx > 12 && right);
+      if (ok && Math.abs(mx) > Math.abs(my) * 1.5) {
+        active = true;
+        row.classList.add('swiping');
+        inner.setPointerCapture(pid);
+      } else if (Math.abs(my) > 12 || Math.abs(mx) > 12) {
+        x0 = null;
+        return;
+      } else return;
+    }
+    dx = Math.max(left ? -160 : 0, Math.min(right ? 160 : 0, mx));
+    inner.style.transform = `translateX(${dx}px)`;
+    row.classList.toggle('dir-left', dx < 0);
+    row.classList.toggle('dir-right', dx > 0);
+    row.classList.toggle('armed', Math.abs(dx) > 80);
+  });
+  const end = () => {
+    if (x0 == null) return;
+    const swiped = active && Math.abs(dx) > 80 ? (dx < 0 ? left : right) : null;
+    if (active) swallow = true;
+    x0 = null;
+    active = false;
+    inner.style.transition = 'transform .2s ease';
+    inner.style.transform = '';
+    setTimeout(() => {
+      inner.style.transition = '';
+      row.classList.remove('swiping', 'dir-left', 'dir-right');
+    }, 210);
+    row.classList.remove('armed');
+    if (swiped) swiped.fn();
+  };
+  inner.addEventListener('pointerup', end);
+  inner.addEventListener('pointercancel', end);
+  inner.addEventListener('click', (e) => {
+    if (swallow) {
+      swallow = false;
+      return;
+    }
+    onTap?.(e);
   });
   return row;
 }

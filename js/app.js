@@ -12,10 +12,11 @@ import * as woche from './views/woche.js';
 import * as sinn from './views/sinn.js';
 import * as contact from './views/contact.js';
 import * as leistung from './views/leistung.js';
+import * as todos from './views/todos.js';
 import * as mind from './mind.js';
 import { seedDefaults } from './body.js';
 
-const TABS = [{ id: 'heute', tab: 'Heute', icon: 'home' }, ...AREAS.map((a) => ({ id: a.id, tab: a.tab, icon: a.id }))];
+const TABS = [{ id: 'heute', tab: 'Überblick', icon: 'home' }, ...AREAS.map((a) => ({ id: a.id, tab: a.tab, icon: a.id })), { id: 'todos', tab: 'Todos', icon: 'todos' }];
 
 let main, tabbar, syncBtn, gearBtn;
 
@@ -33,6 +34,7 @@ function render() {
   else if (r === 'sinn') view = sinn.render(render);
   else if (r === 'contact') view = contact.render(sub, render);
   else if (r === 'leistung') view = leistung.render(sub, render);
+  else if (r === 'todos') view = todos.render(render);
   else if (r === 'review') view = review.render(render);
   else if (r === 'woche') view = woche.render(render);
   else if (AREAS.some((a) => a.id === r)) view = area.render(r);
