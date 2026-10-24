@@ -160,6 +160,17 @@ function storageSection(refresh) {
     h('p.label', 'Speicher'),
     info,
     h('div.buttons',
+      h('button.btn.ghost', {
+        onclick: async () => {
+          toast('Lade neueste Version …');
+          // Nur App-Dateien neu laden – deine Daten bleiben unberührt.
+          const keys = await caches.keys().catch(() => []);
+          await Promise.all(keys.map((k) => caches.delete(k)));
+          const reg = await navigator.serviceWorker?.getRegistration().catch(() => null);
+          await reg?.update().catch(() => {});
+          location.reload();
+        },
+      }, 'App aktualisieren'),
       h('button.btn.danger', {
         onclick: async () => {
           if (!confirm('Wirklich ALLE Daten auf diesem Gerät löschen?')) return;

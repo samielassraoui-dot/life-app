@@ -1,6 +1,7 @@
 // Service Worker: macht die App offline nutzbar.
 // Strategie: erst Netz (damit Updates sofort ankommen), nach 3 s oder offline aus dem Zwischenspeicher.
-const CACHE = 'life4-v3';
+// Wichtig: immer beim Server nachfragen (cache: 'no-cache'), nie alte Dateien aus dem Browser-Cache nehmen.
+const CACHE = 'life4-v4';
 const FILES = [
   './',
   'index.html',
@@ -23,8 +24,17 @@ const FILES = [
   'icons/icon-512.png',
 ];
 
+const fresh = (url) => fetch(new Request(url, { cache: 'no-cache', credentials: 'same-origin' }));
+
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      .then((c) => Promise.all(FILES.map((f) => fresh(f).then((res) => {
+        if (!res.ok) throw new Error(`${f}: ${res.status}`);
+        return c.put(f, res);
+      }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener('activate', (e) => {
@@ -40,7 +50,7 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
     caches.open(CACHE).then((cache) => {
-      const fromNet = fetch(e.request).then((res) => {
+      const fromNet = fresh(e.request.url).then((res) => {
         if (res.ok) cache.put(e.request, res.clone());
         return res;
       });
