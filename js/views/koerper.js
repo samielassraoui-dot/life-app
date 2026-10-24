@@ -1,12 +1,14 @@
 // Bereich Körper: Tagesansicht, Wochenplan-Import, Ziele.
 import * as body from '../body.js';
-import { lineChart } from '../chart.js';
-import { h, icon, toast, iso, fromIso, addDays, weekStart, fmtLong, fmtShort, WD_SHORT } from '../ui.js';
+import { lineChart, weekChart } from '../chart.js';
+import { h, icon, toast, iso, fromIso, addDays, weekStart, fmtLong, fmtShort, WD_SHORT, saveFile, isoWeek } from '../ui.js';
 
 let day = iso();
 let dayIsToday = true;     // springt bei neuem Tag automatisch mit
 let editRoutines = false;
 let showExtra = false;
+let showTraining = false;
+let chartMode = 'woche';
 let pendingPlan = null;
 
 const n = (v) => Math.round(v).toLocaleString('de-DE');
@@ -24,21 +26,55 @@ function back() {
   return h('a.backlink', { href: '#/koerper' }, icon('back', 18), 'Körper');
 }
 
+function secTitle(ic, text, right) {
+  return h('div.sec-title', h('span.sec-icon', icon(ic, 18)), h('h2', text), right || null);
+}
+
 // ---------- Tagesansicht ----------
 
 function dayView(refresh) {
+  return h('div.view.a-koerper',
+    hero(refresh),
+    mealsCard(refresh),
+    routinesCard(refresh),
+    trainingCard(refresh),
+    weightCard(refresh),
+    h('div.tools',
+      h('a.tool', { href: '#/koerper/import' }, h('span.tool-icon', icon('upload', 20)), h('span', 'Wochenplan', h('br'), 'importieren')),
+      h('button.tool', { onclick: calendarExport }, h('span.tool-icon', icon('bell', 20)), h('span', 'Erinnerungen', h('br'), 'in Kalender')),
+      h('a.tool', { href: '#/koerper/ziele' }, h('span.tool-icon', icon('settings', 20)), h('span', 'Ziele', h('br'), 'anpassen')),
+    ),
+  );
+}
+
+function ring(value, goal) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  const pct = goal ? Math.min(1, value / goal) : 0;
+  const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  s.setAttribute('viewBox', '0 0 128 128');
+  s.setAttribute('class', 'ring');
+  s.innerHTML = `<circle cx="64" cy="64" r="${r}" class="ring-track"/>`
+    + `<circle cx="64" cy="64" r="${r}" class="ring-val" stroke-dasharray="${c * pct} ${c}" transform="rotate(-90 64 64)"/>`;
+  return h('div.ring-wrap', s, h('div.ring-text', h('b', n(value)), h('span', `von ${n(goal)}`), h('span', 'kcal')));
+}
+
+function hero(refresh) {
   const today = iso();
   const go = (delta) => {
     day = iso(addDays(fromIso(day), delta));
     dayIsToday = day === today;
     showExtra = false;
+    showTraining = false;
     refresh();
   };
   const label = day === today ? 'Heute' : day === iso(addDays(new Date(), 1)) ? 'Morgen' : day === iso(addDays(new Date(), -1)) ? 'Gestern' : WD_SHORT[fromIso(day).getDay()];
+  const t = body.targets();
+  const { eaten, planned } = body.totals(day);
 
-  return h('div.view.a-koerper',
+  return h('section.kp-hero',
     h('div.daynav',
-      h('button.iconbtn', { onclick: () => go(-1), 'aria-label': 'Vorheriger Tag' }, icon('back', 20)),
+      h('button.navbtn', { onclick: () => go(-1), 'aria-label': 'Vorheriger Tag' }, icon('back', 20)),
       h('button.daylabel', {
         onclick: () => {
           day = today;
@@ -46,40 +82,18 @@ function dayView(refresh) {
           refresh();
         },
       }, h('b', label), h('span', fmtLong(fromIso(day)))),
-      h('button.iconbtn.flip', { onclick: () => go(1), 'aria-label': 'Nächster Tag' }, icon('back', 20)),
+      h('button.navbtn.flip', { onclick: () => go(1), 'aria-label': 'Nächster Tag' }, icon('back', 20)),
     ),
-    totalsCard(),
-    mealsCard(refresh),
-    routinesCard(refresh),
-    trainingCard(refresh),
-    weightCard(refresh),
-    h('div.linkrow',
-      h('a.btn.ghost', { href: '#/koerper/import' }, icon('upload', 18), 'Wochenplan importieren'),
-      h('a.btn.ghost', { href: '#/koerper/ziele' }, 'Ziele anpassen'),
+    h('div.kp-sum',
+      ring(eaten.kcal, t.kcal),
+      h('div.kp-macros',
+        body.MACROS.slice(1).map((m) => h('div.kp-macro',
+          h('div.row.between', h('span', m.name), h('span', h('b', n(eaten[m.id])), ` / ${n(t[m.id])} g`)),
+          h('div.hbar', h('i', { style: { width: `${Math.min(100, t[m.id] ? (eaten[m.id] / t[m.id]) * 100 : 0)}%` } })),
+        )),
+      ),
     ),
-  );
-}
-
-function totalsCard() {
-  const t = body.targets();
-  const { eaten, planned } = body.totals(day);
-  const pct = (k) => Math.min(100, t[k] ? (eaten[k] / t[k]) * 100 : 0);
-  return h('section.card.totals',
-    h('div.row.between',
-      h('p.label', day === iso() ? 'Heute gegessen' : 'Gegessen'),
-      h('p.muted', planned.kcal ? `geplant ${n(planned.kcal)} kcal` : ''),
-    ),
-    h('div.kcal',
-      h('b', n(eaten.kcal)), h('span.muted', ` / ${n(t.kcal)} kcal`),
-    ),
-    h('div.bar.big', h('i', { style: { width: `${pct('kcal')}%` } })),
-    h('div.macros',
-      body.MACROS.slice(1).map((m) => h('div.macro',
-        h('span.small.muted', m.short || m.name),
-        h('span.small', h('b', n(eaten[m.id])), ` / ${n(t[m.id])} g`),
-        h('div.bar', h('i', { style: { width: `${pct(m.id)}%` } })),
-      )),
-    ),
+    planned.kcal > 0 && h('p.kp-plan', `Geplant: ${n(planned.kcal)} kcal · ${n(planned.protein)} g Protein`),
   );
 }
 
@@ -90,31 +104,36 @@ function mealsCard(refresh) {
 
   const rows = list.map((m, i) => {
     const s = body.mealStatus(day, i);
+    const cat = body.category(m);
     const set = (v) => {
       body.setMealStatus(day, i, s === v ? null : v);
       refresh();
     };
-    return h(`div.meal${s === 'ja' ? '.eaten' : ''}${s === 'nein' ? '.skipped' : ''}${next && next.i === i ? '.next' : ''}`,
-      h('span.time', m.zeit || '–'),
+    return h(`div.meal.cat-${cat}${s === 'ja' ? '.eaten' : ''}${s === 'nein' ? '.skipped' : ''}`,
       h('div.meal-main',
+        h('div.meal-meta',
+          h('span.cat', body.catName(cat)),
+          h('span.time', m.zeit || ''),
+          next && next.i === i && h('span.nexttag', 'als Nächstes'),
+        ),
         h('p.meal-name', m.name),
         h('p.small.muted', [m.menge, `${n(m.kcal)} kcal`, `${n(m.protein)} P`, `${n(m.kh)} KH`, `${n(m.fett)} F`].filter(Boolean).join(' · ')),
       ),
       h('div.meal-btns',
-        h('button.pill.yes', { onclick: () => set('ja'), 'aria-pressed': s === 'ja', 'aria-label': 'Gegessen' }, icon('check', 20)),
-        h('button.pill.no', { onclick: () => set('nein'), 'aria-pressed': s === 'nein', 'aria-label': 'Nicht gegessen' }, icon('close', 18)),
+        h('button.pill.yes', { onclick: () => set('ja'), 'aria-pressed': s === 'ja', 'aria-label': 'Gegessen' }, icon('check', 22)),
+        h('button.pill.no', { onclick: () => set('nein'), 'aria-pressed': s === 'nein', 'aria-label': 'Nicht gegessen' }, icon('close', 20)),
       ),
     );
   });
 
-  const extraRows = extras.map((e) => h('div.meal.eaten.extra',
-    h('span.time', e.zeit || '–'),
+  const extraRows = extras.map((e) => h('div.meal.cat-spontan.eaten',
     h('div.meal-main',
-      h('p.meal-name', e.name, h('span.tag', 'spontan')),
+      h('div.meal-meta', h('span.cat', 'Spontan'), h('span.time', e.zeit || '')),
+      h('p.meal-name', e.name),
       h('p.small.muted', `${n(e.kcal)} kcal · ${n(e.protein)} P · ${n(e.kh)} KH · ${n(e.fett)} F`),
     ),
     h('div.meal-btns',
-      h('button.pill.no', {
+      h('button.pill.del', {
         'aria-label': 'Löschen',
         onclick: () => {
           if (!confirm(`„${e.name}“ entfernen?`)) return;
@@ -125,12 +144,12 @@ function mealsCard(refresh) {
     ),
   ));
 
+  const eatenCount = list.filter((_, i) => body.mealStatus(day, i) === 'ja').length;
   return h('section.card',
-    h('div.row.between', h('p.label', 'Mahlzeiten'), list.length > 0 && h('p.small.muted', 'Gegessen ✓ · Nicht gegessen ✕')),
+    secTitle('meal', 'Mahlzeiten', list.length > 0 && h('span.count', `${eatenCount}/${list.length}`)),
     !list.length && h('p.muted', 'Für diesen Tag ist noch kein Essensplan da. Importiere deinen Wochenplan unten.'),
-    rows,
-    extraRows,
-    showExtra ? extraForm(refresh) : h('button.btn.ghost.full', { onclick: () => { showExtra = true; refresh(); } }, '+ Spontan gegessen'),
+    h('div.meals', rows, extraRows),
+    showExtra ? extraForm(refresh) : h('button.btn.soft.full', { onclick: () => { showExtra = true; refresh(); } }, icon('plus', 18), 'Spontan gegessen'),
   );
 }
 
@@ -170,11 +189,11 @@ function routinesCard(refresh) {
     const nameIn = h('input.input', { placeholder: 'Neue Routine, z. B. Omega 3' });
     const timeIn = h('input.input.time', { type: 'time', value: '08:00' });
     return h('section.card',
-      h('div.row.between', h('p.label', 'Routinen bearbeiten'), h('button.link', { onclick: () => { editRoutines = false; refresh(); } }, 'Fertig')),
+      secTitle('list', 'Routinen bearbeiten', h('button.link', { onclick: () => { editRoutines = false; refresh(); } }, 'Fertig')),
       list.map((r) => h('div.editrow',
         h('input.input.time', { type: 'time', value: r.zeit || '', onchange: (e) => body.saveRoutine(r.id, { name: r.name, zeit: e.target.value }) }),
         h('input.input', { value: r.name, onchange: (e) => e.target.value.trim() && body.saveRoutine(r.id, { name: e.target.value.trim(), zeit: r.zeit }) }),
-        h('button.pill.no', {
+        h('button.pill.del', {
           'aria-label': 'Löschen',
           onclick: () => {
             if (!confirm(`Routine „${r.name}“ löschen?`)) return;
@@ -186,7 +205,7 @@ function routinesCard(refresh) {
       h('div.editrow.add',
         timeIn,
         nameIn,
-        h('button.pill.yes.on', {
+        h('button.pill.add', {
           'aria-label': 'Hinzufügen',
           onclick: () => {
             if (!nameIn.value.trim()) return;
@@ -199,10 +218,10 @@ function routinesCard(refresh) {
   }
 
   return h('section.card',
-    h('div.row.between',
-      h('p.label', 'Routinen', h('span.count', `${doneCount}/${list.length}`)),
+    secTitle('list', 'Routinen', h('span.row',
+      h('span.count', `${doneCount}/${list.length}`),
       h('button.link', { onclick: () => { editRoutines = true; refresh(); } }, 'Bearbeiten'),
-    ),
+    )),
     !list.length && h('p.muted', 'Noch keine Routinen. Tippe auf „Bearbeiten“.'),
     list.map((r) => {
       const done = body.routineDone(day, r.id);
@@ -222,54 +241,80 @@ function routinesCard(refresh) {
 
 function trainingCard(refresh) {
   const list = body.training(day);
-  const choose = h('div.chips',
-    body.TRAINING_TYPES.map((t) => h('button.chip', {
-      onclick: () => {
-        body.setTraining(day, [...list, { art: t.id, details: '' }]);
+
+  const items = list.map((t, i) => {
+    const art = body.normArt(t.art);
+    const remove = h('button.pill.del.small', {
+      'aria-label': 'Entfernen',
+      onclick: (e) => {
+        e.stopPropagation();
+        if (!confirm(`${body.trainingName(t.art)} entfernen?`)) return;
+        body.removeTraining(day, i);
         refresh();
       },
-    }, t.name)),
-  );
-
-  return h('section.card',
-    h('div.row.between',
-      h('p.label', 'Training'),
-      list.length > 0 && h('button.link', {
-        onclick: () => {
-          if (!confirm('Training für diesen Tag zurücksetzen?')) return;
-          body.setTraining(day, []);
-          refresh();
-        },
-      }, 'Ändern'),
-    ),
-    !list.length && h('p.muted', 'Nichts geplant. Was steht heute an?'),
-    !list.length && choose,
-    list.map((t, i) => {
-      const art = body.normArt(t.art);
-      if (art === 'ruhetag') {
-        return h('div.rest', h('b', 'Ruhetag'), h('span.muted', t.details || 'Erholung gehört zum Muskelaufbau dazu.'));
-      }
-      const done = body.trainingDone(day, i);
-      return h(`button.check${done ? '.done' : ''}`, {
+    }, icon('close', 16));
+    if (art === 'ruhetag') {
+      return h('div.rest', h('div', h('b', 'Ruhetag'), h('span.small.muted.block', t.details || 'Erholung gehört zum Muskelaufbau dazu.')), remove);
+    }
+    const done = body.trainingDone(day, i);
+    return h('div.check-wrap',
+      h(`button.check${done ? '.done' : ''}`, {
         onclick: () => {
           body.toggleTraining(day, i);
           refresh();
         },
       },
       h('span.box', icon('check', 18)),
-      h('span.check-name', h('b', body.trainingName(t.art)), t.details ? h('span.small.muted.block', t.details) : null));
-    }),
+      h('span.check-name',
+        h('b', body.trainingName(t.art)),
+        t.spontan && h('span.tag', 'spontan'),
+        t.details ? h('span.small.muted.block', t.details) : null),
+      h('span.time', t.zeit || '')),
+      remove,
+    );
+  });
+
+  let adder;
+  if (showTraining) {
+    const custom = h('input.input', { placeholder: 'Andere Art, z. B. Schwimmen' });
+    const details = h('input.input', { placeholder: 'Details (optional), z. B. 30 Min' });
+    const add = (art) => {
+      body.addTraining(day, { art: body.normArt(art), details: details.value.trim(), spontan: true });
+      showTraining = false;
+      toast(`${body.trainingName(art)} hinzugefügt`);
+      refresh();
+    };
+    adder = h('div.form',
+      h('p.small.muted', 'Antippen fügt das Training direkt hinzu.'),
+      details,
+      h('div.chips', body.trainingChoices().map((c) => h('button.chip', { onclick: () => add(c.id) }, c.name))),
+      h('div.editrow.add2',
+        custom,
+        h('button.pill.add', { 'aria-label': 'Hinzufügen', onclick: () => custom.value.trim() && add(custom.value.trim()) }, icon('plus', 20)),
+      ),
+      h('button.btn.ghost', { onclick: () => { showTraining = false; refresh(); } }, 'Abbrechen'),
+    );
+  } else {
+    adder = h('button.btn.soft.full', { onclick: () => { showTraining = true; refresh(); } }, icon('plus', 18), 'Training hinzufügen');
+  }
+
+  return h('section.card',
+    secTitle('koerper', 'Training'),
+    !list.length && h('p.muted', 'Für diesen Tag ist nichts geplant.'),
+    items,
+    adder,
   );
 }
 
 function weightCard(refresh) {
   const w = body.weight(day);
-  const thisWeek = body.weekAvg(weekStart(fromIso(day)));
-  const lastWeek = body.weekAvg(addDays(weekStart(fromIso(day)), -7));
+  const monday = weekStart(fromIso(day));
+  const thisWeek = body.weekAvg(monday);
+  const lastWeek = body.weekAvg(addDays(monday, -7));
   const diff = thisWeek && lastWeek ? thisWeek - lastWeek : null;
   const input = h('input.input.weight', {
     inputmode: 'decimal',
-    placeholder: 'z. B. 70,4',
+    placeholder: '70,0',
     value: w ? kg(w) : '',
     onchange: (e) => {
       const v = parseNum(e.target.value);
@@ -279,19 +324,35 @@ function weightCard(refresh) {
       refresh();
     },
   });
+  const seg = (id, label) => h(`button.seg${chartMode === id ? '.on' : ''}`, { onclick: () => { chartMode = id; refresh(); } }, label);
 
   return h('section.card',
-    h('p.label', 'Morgengewicht'),
+    secTitle('scale', 'Morgengewicht'),
     h('div.weightrow',
       h('div.weightin', input, h('span.muted', 'kg')),
       h('div.stat',
-        h('span.small.muted', 'Wochenschnitt'),
+        h('span.small.muted', `Schnitt KW ${isoWeek(monday)}`),
         h('b', thisWeek ? `${kg(thisWeek)} kg` : '–'),
-        diff != null && h('span.small.muted', `${diff >= 0 ? '+' : '–'}${kg(Math.abs(diff))} kg zur Vorwoche`),
+        diff != null && h(`span.small.delta${diff >= 0 ? '.up' : '.down'}`, `${diff >= 0 ? '▲ +' : '▼ –'}${kg(Math.abs(diff))} kg zur Vorwoche`),
       ),
     ),
-    lineChart(body.weights(), { weeks: 8 }),
+    h('div.segs', seg('woche', `Woche ${fmtShort(monday)}–${fmtShort(addDays(monday, 6))}`), seg('verlauf', '8 Wochen')),
+    chartMode === 'woche'
+      ? weekChart(body.weights(), monday, { refValue: lastWeek })
+      : lineChart(body.weights(), { weeks: 8 }),
   );
+}
+
+// ---------- Kalender-Export ----------
+
+async function calendarExport() {
+  // Sonntags meint man meist schon die kommende Woche.
+  const base = fromIso(day);
+  const monday = base.getDay() === 0 && dayIsToday ? addDays(weekStart(base), 7) : weekStart(base);
+  const { text, count } = body.weekIcs(monday);
+  if (!count) return toast('Für diese Woche gibt es noch keine Mahlzeiten mit Uhrzeit.', 'error');
+  if (!confirm(`${count} Erinnerungen für die Woche ${fmtShort(monday)}–${fmtShort(addDays(monday, 6))} als Kalender-Datei erstellen?`)) return;
+  await saveFile(new Blob([text], { type: 'text/calendar' }), `essen-kw${isoWeek(monday)}.ics`, 'text/calendar');
 }
 
 // ---------- Import ----------
@@ -311,7 +372,7 @@ function importView(refresh) {
       preview.replaceChildren();
       return;
     }
-    preview.replaceChildren(planPreview(pendingPlan, refresh));
+    preview.replaceChildren(planPreview(pendingPlan));
   }
 
   return h('div.view.a-koerper',
@@ -338,7 +399,7 @@ function importView(refresh) {
     preview,
     h('section.card',
       h('p.label', 'Vorlage für deinen Claude-Chat'),
-      h('p.muted', 'Schicke diesen Text einmal in dein Körper-Projekt (oder lege ihn dort als Anweisung ab). Dann kommt der Plan jeden Sonntag direkt im passenden Format.'),
+      h('p.muted', 'Lege diesen Text in deinem Körper-Projekt als Anweisung ab. Dann kommt der Plan jeden Sonntag direkt im passenden Format.'),
       h('div.buttons',
         h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_MEALS) }, 'Vorlage Essensplan kopieren'),
         h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_TRAINING) }, 'Vorlage Trainingsplan kopieren'),
@@ -356,7 +417,7 @@ async function copy(text) {
   }
 }
 
-function planPreview(plan, refresh) {
+function planPreview(plan) {
   const isMeals = plan.typ === 'essen';
   const end = addDays(plan.monday, 6);
   const existing = plan.days.some((items, i) => {
@@ -397,7 +458,7 @@ function planPreview(plan, refresh) {
 
 // ---------- Ziele ----------
 
-function goalsView(refresh) {
+function goalsView() {
   const t = body.targets();
   const inputs = body.MACROS.map((m) => ({ m, el: h('input.input', { inputmode: 'numeric', value: t[m.id] }) }));
   return h('div.view.a-koerper',

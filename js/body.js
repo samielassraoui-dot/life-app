@@ -33,6 +33,38 @@ export function setTargets(t) {
 
 // ---------- Mahlzeiten ----------
 
+// ---------- Kategorien ----------
+
+export const CATEGORIES = [
+  { id: 'fruehstueck', name: 'Frühstück' },
+  { id: 'mittag', name: 'Mittagessen' },
+  { id: 'snack', name: 'Snack' },
+  { id: 'training', name: 'Vor dem Training' },
+  { id: 'abend', name: 'Abendessen' },
+];
+export const catName = (id) => (CATEGORIES.find((c) => c.id === id) || { name: 'Snack' }).name;
+
+function normCat(k) {
+  const a = String(k || '').toLowerCase();
+  if (!a) return '';
+  if (a.includes('früh') || a.includes('frueh') || a.includes('breakfast')) return 'fruehstueck';
+  if (a.includes('mittag') || a.includes('lunch')) return 'mittag';
+  if (a.includes('abend') || a.includes('dinner')) return 'abend';
+  if (a.includes('training') || a.includes('workout') || a.startsWith('pre')) return 'training';
+  return 'snack';
+}
+
+// Kategorie einer Mahlzeit – fehlt sie im Plan, wird sie aus der Uhrzeit geschätzt.
+export function category(m) {
+  if (m.kategorie) return m.kategorie;
+  const t = m.zeit || '';
+  if (!t) return 'snack';
+  if (t < '10:30') return 'fruehstueck';
+  if (t >= '11:30' && t < '14:30') return 'mittag';
+  if (t >= '18:00') return 'abend';
+  return 'snack';
+}
+
 export function meals(date) {
   return store.get(`meals:${date}`, []);
 }
@@ -98,19 +130,34 @@ export const TRAINING_TYPES = [
   { id: 'ruhetag', name: 'Ruhetag' },
 ];
 
-export function trainingName(art) {
-  const t = TRAINING_TYPES.find((x) => x.id === normArt(art));
-  return t ? t.name : art;
+// Bekannte Arten bekommen eine feste ID; alles andere (z. B. „Schwimmen“) bleibt wie geschrieben.
+export function normArt(art) {
+  const raw = String(art || '').trim();
+  const a = raw.toLowerCase();
+  if (a.startsWith('studio') || a === 'gym' || a.startsWith('kraft')) return 'studio';
+  if (a.startsWith('spinning') || a.startsWith('indoor cycling')) return 'spinning';
+  if (a.includes('infrarot')) return 'infrarot';
+  if (a.startsWith('sauna')) return 'sauna';
+  if (a.startsWith('ruhe') || a === 'pause' || a === 'rest') return 'ruhetag';
+  return raw || 'studio';
 }
 
-export function normArt(art) {
-  const a = String(art || '').toLowerCase().trim();
-  if (a.startsWith('studio') || a.includes('gym') || a.includes('kraft')) return 'studio';
-  if (a.startsWith('spinning') || a.includes('rad') || a.includes('cycling')) return 'spinning';
-  if (a.includes('infrarot')) return 'infrarot';
-  if (a.includes('sauna')) return 'sauna';
-  if (a.includes('ruhe') || a.includes('pause') || a.includes('rest')) return 'ruhetag';
-  return a || 'studio';
+export function trainingName(art) {
+  const id = normArt(art);
+  const t = TRAINING_TYPES.find((x) => x.id === id);
+  return t ? t.name : id.charAt(0).toUpperCase() + id.slice(1);
+}
+
+// Auswahl für „Training hinzufügen“: Standardarten + eigene, die schon mal vorkamen.
+export function trainingChoices() {
+  const custom = new Set();
+  for (const { v } of store.list('training:')) {
+    for (const t of v || []) {
+      const id = normArt(t.art);
+      if (!TRAINING_TYPES.some((x) => x.id === id)) custom.add(trainingName(id));
+    }
+  }
+  return [...TRAINING_TYPES.map((t) => ({ id: t.id, name: t.name })), ...[...custom].slice(0, 8).map((n) => ({ id: n, name: n }))];
 }
 
 export function training(date) {
@@ -120,6 +167,23 @@ export function training(date) {
 export function setTraining(date, list) {
   if (list.length) store.set(`training:${date}`, list);
   else store.del(`training:${date}`);
+}
+
+export function addTraining(date, t) {
+  setTraining(date, [...training(date), t]);
+}
+
+// Entfernt eine Einheit und verschiebt die Erledigt-Haken der folgenden mit.
+export function removeTraining(date, i) {
+  const list = training(date);
+  const done = list.map((_, j) => trainingDone(date, j));
+  list.splice(i, 1);
+  done.splice(i, 1);
+  for (let j = 0; j <= list.length; j++) {
+    if (done[j]) store.set(`tdone:${date}:${j}`, true);
+    else store.del(`tdone:${date}:${j}`);
+  }
+  setTraining(date, list);
 }
 
 export function trainingDone(date, i) {
@@ -256,7 +320,8 @@ const num = (v) => Math.round(Number(String(v ?? '').replace(',', '.').replace(/
 function normMeal(m) {
   return {
     zeit: String(m.zeit || m.uhrzeit || '').slice(0, 5),
-    name: String(m.name || m.gericht || m.mahlzeit || 'Mahlzeit'),
+    name: String(m.name || m.gericht || 'Mahlzeit'),
+    kategorie: normCat(m.kategorie || m.mahlzeit || m.typ),
     menge: String(m.menge || ''),
     kcal: num(m.kcal ?? m.kalorien),
     protein: num(m.protein ?? m.eiweiss),
@@ -269,7 +334,7 @@ function normTraining(v) {
   const list = Array.isArray(v) ? v : [v];
   return list.filter(Boolean).map((t) => (typeof t === 'string'
     ? { art: normArt(t), details: '' }
-    : { art: normArt(t.art || t.typ || t.name), details: String(t.details || t.inhalt || t.beschreibung || '') }));
+    : { art: normArt(t.art || t.typ || t.name), details: String(t.details || t.inhalt || t.beschreibung || ''), ...(t.zeit ? { zeit: String(t.zeit).slice(0, 5) } : {}) }));
 }
 
 // Liest den eingefügten Text (darf drumherum Text oder ```json enthalten).
@@ -329,7 +394,8 @@ export const TEMPLATE_MEALS = `Bitte gib mir meinen Essensplan für die kommende
 Regeln:
 - "woche_ab" ist der Montag der Woche im Format JJJJ-MM-TT.
 - Tage: "Mo", "Di", "Mi", "Do", "Fr", "Sa", "So". Tage mit gleichem Meal Prep darfst du zusammenfassen, z. B. "Mo-Mi" oder "Do,Sa".
-- Pro Mahlzeit: zeit (HH:MM), name, menge, kcal, protein, kh, fett (Gramm, ganze Zahlen).
+- Pro Mahlzeit: zeit (HH:MM), kategorie, name, menge, kcal, protein, kh, fett (Gramm, ganze Zahlen).
+- "kategorie" ist genau eins von: Frühstück, Mittagessen, Snack, Vor dem Training, Abendessen.
 - Shakes und Snacks auch als eigene Mahlzeit.
 - Keine Kommentare im Code-Block.
 
@@ -339,11 +405,11 @@ Regeln:
   "woche_ab": "2026-10-26",
   "tage": {
     "Mo-Mi": [
-      { "zeit": "07:30", "name": "Overnight Oats mit Whey", "menge": "1 Box (400 g)", "kcal": 620, "protein": 42, "kh": 78, "fett": 14 },
-      { "zeit": "12:30", "name": "Hähnchen, Reis, Brokkoli", "menge": "1 Box (550 g)", "kcal": 780, "protein": 55, "kh": 95, "fett": 18 }
+      { "zeit": "07:30", "kategorie": "Frühstück", "name": "Overnight Oats mit Whey", "menge": "1 Box (400 g)", "kcal": 620, "protein": 42, "kh": 78, "fett": 14 },
+      { "zeit": "12:30", "kategorie": "Mittagessen", "name": "Hähnchen, Reis, Brokkoli", "menge": "1 Box (550 g)", "kcal": 780, "protein": 55, "kh": 95, "fett": 18 }
     ],
     "Do-So": [
-      { "zeit": "07:30", "name": "Rührei mit Vollkornbrot", "menge": "4 Eier, 2 Scheiben", "kcal": 590, "protein": 36, "kh": 45, "fett": 28 }
+      { "zeit": "07:30", "kategorie": "Frühstück", "name": "Rührei mit Vollkornbrot", "menge": "4 Eier, 2 Scheiben", "kcal": 590, "protein": 36, "kh": 45, "fett": 28 }
     ]
   }
 }
@@ -354,7 +420,8 @@ export const TEMPLATE_TRAINING = `Bitte gib mir meinen Trainingsplan für die ko
 Regeln:
 - "woche_ab" ist der Montag der Woche im Format JJJJ-MM-TT.
 - Tage: "Mo", "Di", "Mi", "Do", "Fr", "Sa", "So" (zusammenfassen erlaubt, z. B. "Sa,So").
-- "art" ist genau eins von: Studio, Spinning, Sauna, Infrarot, Ruhetag.
+- "art": Studio, Spinning, Sauna, Infrarot oder Ruhetag – andere Trainings einfach mit ihrem Namen (z. B. Schwimmen, Laufen, Boxen).
+- "zeit" (HH:MM) ist optional.
 - "details" ist eine kurze Beschreibung (z. B. Muskelgruppen, Dauer).
 - Mehrere Einheiten an einem Tag als Liste.
 - Keine Kommentare im Code-Block.
@@ -365,8 +432,44 @@ Regeln:
   "woche_ab": "2026-10-26",
   "tage": {
     "Mo": [ { "art": "Studio", "details": "Push: Brust, Schultern, Trizeps" }, { "art": "Sauna", "details": "2 Gänge" } ],
-    "Di": [ { "art": "Spinning", "details": "45 Min" } ],
+    "Di": [ { "art": "Spinning", "details": "45 Min", "zeit": "18:00" } ],
+    "Do": [ { "art": "Schwimmen", "details": "30 Min locker" } ],
     "Mi": [ { "art": "Ruhetag", "details": "" } ]
   }
 }
 \`\`\``;
+
+// ---------- Kalender-Export (Erinnerungen für Mahlzeiten) ----------
+
+// Erstellt eine .ics-Datei mit allen geplanten Mahlzeiten (und Trainings mit Uhrzeit)
+// einer Woche – jeweils mit Erinnerung zur Startzeit.
+export function weekIcs(monday) {
+  const esc = (t) => String(t).replace(/\\/g, '\\\\').replace(/[,;]/g, (c) => `\\${c}`).replace(/\n/g, '\\n');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//4 Bereiche//Life App//DE', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Essen & Training'];
+  let count = 0;
+  const event = (uid, date, zeit, mins, title, desc) => {
+    const [hh, mm] = zeit.split(':').map(Number);
+    const start = new Date(fromIso(date).setHours(hh, mm, 0, 0));
+    const end = new Date(start.getTime() + mins * 60000);
+    const f = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}00`;
+    lines.push('BEGIN:VEVENT', `UID:${uid}@life4`, `DTSTAMP:${stamp}`, `DTSTART:${f(start)}`, `DTEND:${f(end)}`,
+      `SUMMARY:${esc(title)}`, `DESCRIPTION:${esc(desc)}`,
+      'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(title)}`, 'TRIGGER:PT0M', 'END:VALARM', 'END:VEVENT');
+    count++;
+  };
+  for (let i = 0; i < 7; i++) {
+    const d = iso(addDays(monday, i));
+    meals(d).forEach((m, j) => {
+      if (!/^\d{2}:\d{2}$/.test(m.zeit)) return;
+      event(`meal-${d}-${j}`, d, m.zeit, 20, `${catName(category(m))}: ${m.name}`,
+        [m.menge, `${m.kcal} kcal · ${m.protein} g Protein`].filter(Boolean).join('\n'));
+    });
+    training(d).forEach((t, j) => {
+      if (!t.zeit || normArt(t.art) === 'ruhetag') return;
+      event(`training-${d}-${j}`, d, t.zeit, 60, `Training: ${trainingName(t.art)}`, t.details || '');
+    });
+  }
+  lines.push('END:VCALENDAR');
+  return { text: lines.join('\r\n'), count };
+}

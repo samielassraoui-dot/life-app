@@ -99,3 +99,57 @@ export function lineChart(points, { weeks = 8, unit = 'kg', decimals = 1, avg = 
   }
   return wrap;
 }
+
+// Wochenansicht: Mo–So der gewählten Woche, Tageswerte verbunden,
+// gestrichelte Linie = Schnitt der Vorwoche als Vergleich.
+export function weekChart(points, monday, { unit = 'kg', decimals = 1, refValue = null, refLabel = 'Vorwoche' } = {}) {
+  const days = Array.from({ length: 7 }, (_, i) => iso(addDays(monday, i)));
+  const byDate = Object.fromEntries(points.map((p) => [p.date, p.v]));
+  const data = days.map((d, i) => ({ i, date: d, v: byDate[d] })).filter((p) => p.v != null);
+  const wrap = h('div.chart');
+  if (!data.length) {
+    wrap.append(h('p.small.muted.chart-empty', 'Diese Woche noch kein Gewicht eingetragen.'));
+    return wrap;
+  }
+  const vals = data.map((p) => p.v).concat(refValue != null ? [refValue] : []);
+  let lo = Math.floor((Math.min(...vals) - 0.3) * 2) / 2;
+  let hi = Math.ceil((Math.max(...vals) + 0.3) * 2) / 2;
+  if (hi - lo < 1.5) {
+    const mid = (hi + lo) / 2;
+    lo = mid - 0.75;
+    hi = mid + 0.75;
+  }
+  const colW = (W - PAD.l - PAD.r) / 7;
+  const sx = (i) => PAD.l + colW * (i + 0.5);
+  const sy = (v) => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b);
+  const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart-svg', role: 'img', 'aria-label': 'Gewicht dieser Woche' });
+  const today = iso();
+
+  for (let k = 0; k <= 3; k++) {
+    const v = lo + ((hi - lo) * k) / 3;
+    root.append(svg('line', { x1: PAD.l, x2: W - PAD.r, y1: sy(v), y2: sy(v), class: 'grid' }));
+    const t = svg('text', { x: PAD.l - 6, y: sy(v) + 4, class: 'axis', 'text-anchor': 'end' });
+    t.textContent = fmt(v, 1);
+    root.append(t);
+  }
+  days.forEach((d, i) => {
+    const t = svg('text', { x: sx(i), y: H - 6, class: `axis${d === today ? ' today' : ''}`, 'text-anchor': 'middle' });
+    t.textContent = WD_SHORT[fromIso(d).getDay()];
+    root.append(t);
+  });
+  if (refValue != null) {
+    root.append(svg('line', { x1: PAD.l, x2: W - PAD.r, y1: sy(refValue), y2: sy(refValue), class: 'ref' }));
+  }
+  if (data.length > 1) root.append(svg('polyline', { points: data.map((p) => `${sx(p.i)},${sy(p.v)}`).join(' '), class: 'line' }));
+  for (const p of data) {
+    root.append(svg('circle', { cx: sx(p.i), cy: sy(p.v), r: 5, class: 'avg' }));
+    const t = svg('text', { x: sx(p.i), y: sy(p.v) - 10, class: 'val', 'text-anchor': 'middle' });
+    t.textContent = fmt(p.v, decimals);
+    root.append(t);
+  }
+  wrap.append(root);
+  if (refValue != null) {
+    wrap.append(h('div.legend', h('span', h('i.lg-line'), 'Diese Woche'), h('span', h('i.lg-ref'), `Schnitt ${refLabel} ${fmt(refValue, decimals)} ${unit}`)));
+  }
+  return wrap;
+}

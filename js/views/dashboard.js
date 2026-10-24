@@ -31,10 +31,10 @@ function nextUp(today) {
   const open = body.routines().filter((r) => r.zeit && r.zeit <= nowT && !body.routineDone(today, r.id));
   if (!meal && !open.length) return null;
   return h('a.card.next-up.a-koerper', { href: '#/koerper' },
-    h('p.label', 'Als Nächstes'),
-    meal && h('div.nu-row',
+    h('div.sec-title', h('span.sec-icon', icon('bell', 18)), h('h2', 'Als Nächstes')),
+    meal && h(`div.nu-row.catrow.cat-${body.category(meal)}`,
       h('span.time', meal.zeit || '–'),
-      h('span', h('b', meal.name), h('span.small.muted.block', `${Math.round(meal.kcal)} kcal · ${Math.round(meal.protein)} g Protein`)),
+      h('span', h('b', meal.name), h('span.small.muted.block', `${body.catName(body.category(meal))} · ${Math.round(meal.kcal)} kcal · ${Math.round(meal.protein)} g Protein`)),
     ),
     open.length > 0 && h('div.nu-row',
       h('span.time', open.length),
@@ -56,15 +56,10 @@ export function render() {
   const today = iso(now);
 
   return h('div.view',
-    h('header.hero',
+    h('section.dash-hero',
       h('p.eyebrow', fmtLong(now)),
       h('h1', name ? `${greeting()}, ${name}` : greeting()),
-    ),
-
-    h('section.card.week',
-      h('div.row.between',
-        h('div', h('p.label', `Woche ${isoWeek(now)}`), h('p.muted', range)),
-      ),
+      h('div.weekhead', h('b', `Woche ${isoWeek(now)}`), h('span', range)),
       h('div.weekstrip',
         days.map((d) => h(`div.wday${iso(d) === today ? '.today' : ''}${iso(d) < today ? '.past' : ''}`,
           h('span', WD_SHORT[d.getDay()]),
@@ -80,8 +75,10 @@ export function render() {
         const pct = SCORES[a.id] ? SCORES[a.id]() : null;
         return h(`a.card.area.a-${a.id}`, { href: `#/${a.id}` },
           h('div.area-top', h('span.area-icon', icon(a.id, 20)), h('span.area-name', a.tab)),
+          pct == null
+            ? h('p.small.muted', `ab Stufe ${a.stage}`)
+            : h('p.area-pct', pct, h('small', '% diese Woche')),
           h('div.bar', h('i', { style: { width: `${pct || 0}%` } })),
-          h('p.small.muted', pct == null ? `Fortschritt ab Stufe ${a.stage}` : `${pct} % diese Woche`),
         );
       }),
     ),

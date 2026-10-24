@@ -43,6 +43,10 @@ const ICONS = {
   close: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   trash: '<path d="M4.5 7h15M10 4h4M6.5 7l1 12.5h9l1-12.5"/>',
+  meal: '<path d="M7 3.5v7.5M4.5 3.5V8a2.5 2.5 0 005 0V3.5M7 11v9.5"/><path d="M17.5 20.5V3.5c-2.2 0-3.5 2.6-3.5 6.5v3.5h3.5"/>',
+  list: '<path d="M9.5 6.5h10M9.5 12h10M9.5 17.5h10"/><path d="M4 6.5l1.2 1.2L7 5.5M4 12l1.2 1.2L7 11M4 17.5l1.2 1.2L7 16.5"/>',
+  scale: '<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M8 9.5a5.5 5.5 0 018 0M12 9.5l1.5-2"/>',
+  bell: '<path d="M6 16.5V11a6 6 0 0112 0v5.5l1.5 1.5h-15z"/><path d="M10 20.5a2.2 2.2 0 004 0"/>',
   download: '<path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/>',
   upload: '<path d="M12 16V5M7 9.5l5-5 5 5M5 20h14"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/>',
@@ -139,4 +143,24 @@ export function ago(ts) {
 
 export function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+// Datei speichern: iPhone → Teilen-Menü, Mac → Download.
+export async function saveFile(blob, name, type) {
+  const f = new File([blob], name, { type });
+  try {
+    if (navigator.canShare?.({ files: [f] }) && /iPhone|iPad|Android/.test(navigator.userAgent)) {
+      await navigator.share({ files: [f], title: name });
+    } else {
+      const a = h('a', { href: URL.createObjectURL(blob), download: name });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }
+    return true;
+  } catch (e) {
+    if (e.name !== 'AbortError') toast('Speichern fehlgeschlagen', 'error');
+    return false;
+  }
 }

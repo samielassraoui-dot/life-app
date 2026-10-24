@@ -1,6 +1,6 @@
 import * as store from '../store.js';
 import * as sync from '../sync.js';
-import { h, icon, toast, ago, iso } from '../ui.js';
+import { h, icon, toast, ago, iso, saveFile } from '../ui.js';
 import { VERSION } from '../version.js';
 
 export function render(refresh) {
@@ -143,22 +143,9 @@ export async function exportBackup() {
   const data = { format: 'life4-backup', v: 1, created: new Date().toISOString(), data: store.snapshot() };
   const name = `life-app-backup-${iso()}.json`;
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-  const f = new File([blob], name, { type: 'application/json' });
-  try {
-    // iPhone: öffnet das Teilen-Menü → „In Dateien sichern“.
-    if (navigator.canShare?.({ files: [f] }) && /iPhone|iPad|Android/.test(navigator.userAgent)) {
-      await navigator.share({ files: [f], title: name });
-    } else {
-      const a = h('a', { href: URL.createObjectURL(blob), download: name });
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    }
+  if (await saveFile(blob, name, 'application/json')) {
     localStorage.setItem('life4.lastBackup', String(Date.now()));
     toast('Backup erstellt');
-  } catch (e) {
-    if (e.name !== 'AbortError') toast('Backup fehlgeschlagen', 'error');
   }
 }
 
