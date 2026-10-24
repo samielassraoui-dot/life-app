@@ -62,13 +62,20 @@ export function todoRow(t, refresh) {
   return swipeRow(inner, {
     onTap: (e) => {
       if (e.target.closest('.td-check')) {
+        // Erledigt: Zeile blendet animiert aus, das Todo bleibt gespeichert, wird aber nicht mehr angezeigt
         const row = inner.closest('.sw2-row') || inner;
-        row.classList.add(t.done ? 'leave-up' : 'leave-down');
-        entering = t.id;
+        row.classList.add('leave-down');
         setTimeout(() => {
-          if (t.done) td.reopen(t.id);
-          else td.complete(t.id);
+          td.complete(t.id);
           refresh();
+          toast('Erledigt', '', {
+            label: 'Rückgängig',
+            fn: () => {
+              td.reopen(t.id);
+              entering = t.id;
+              refresh();
+            },
+          });
         }, 240);
         return;
       }
@@ -178,33 +185,30 @@ function quickAdd(refresh) {
 }
 
 const GROUPS = [
-  { id: 'ueberfaellig', name: 'Überfällig', ic: 'bell', hideEmpty: true },
+  { id: 'ueberfaellig', name: 'Überfällig', ic: 'bell' },
   { id: 'heute', name: 'Heute', ic: 'sun' },
   { id: 'woche', name: 'Diese Woche', ic: 'calendar' },
   { id: 'spaeter', name: 'Später', ic: 'list' },
   { id: 'ohne', name: 'Ohne Datum', ic: 'pen' },
-  { id: 'erledigt', name: 'Erledigt', ic: 'check', closed: true },
 ];
 
 function groupsView(refresh) {
   const g = td.groups();
-  const total = Object.entries(g).filter(([k]) => k !== 'erledigt').reduce((s, [, l]) => s + l.length, 0);
+  const total = GROUPS.reduce((s, gr) => s + g[gr.id].length, 0);
+  // Nur offene Todos; leere Gruppen werden komplett ausgeblendet
+  if (!total) return h('p.muted.center.td-empty', 'Keine Todos');
   return [
-    !total && !g.erledigt.length && h('p.muted.center.td-empty', 'Keine Todos'),
     GROUPS.map((gr) => {
       const list = g[gr.id];
-      if (gr.hideEmpty && !list.length) return null;
-      if (!total && !g.erledigt.length) return null;
+      if (!list.length) return null;
       const head = h('button.kbox-head',
         h('span.sec-icon', icon(gr.ic, 18)),
         h('span.kbox-title', h('h2', gr.name)),
         h('span.count', list.length),
         h('span.kbox-chev', icon('back', 18)),
       );
-      return collapsible(`g-${gr.id}`, !gr.closed, head,
-        h('div.kbox-body', h('div.kbox-inner',
-          list.length ? h('div.td-list', list.map((t) => todoRow(t, refresh))) : h('p.muted', 'Keine Todos'),
-        )),
+      return collapsible(`g-${gr.id}`, true, head,
+        h('div.kbox-body', h('div.kbox-inner', h('div.td-list', list.map((t) => todoRow(t, refresh))))),
         `section.card.kbox.td-group.tg-${gr.id}`);
     }),
   ];

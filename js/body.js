@@ -645,7 +645,7 @@ Regeln:
 export function weekIcs(monday) {
   const esc = (t) => String(t).replace(/\\/g, '\\\\').replace(/[,;]/g, (c) => `\\${c}`).replace(/\n/g, '\\n');
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//4 Bereiche//Life App//DE', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Essen & Training'];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sami\'s World//DE', 'CALSCALE:GREGORIAN', 'X-WR-CALNAME:Essen & Training'];
   let count = 0;
   const event = (uid, date, zeit, mins, title, desc) => {
     const [hh, mm] = zeit.split(':').map(Number);

@@ -1,4 +1,4 @@
-# 4 Bereiche – meine Life App
+# Sami's World
 
 Persönliche Web App (PWA) für Körper, Reflexion & Sinn, Leistung und Contact.
 Läuft im Browser, lässt sich auf dem iPhone wie eine App installieren und funktioniert offline.

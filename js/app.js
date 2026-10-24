@@ -20,6 +20,11 @@ const TABS = [{ id: 'heute', tab: 'Überblick', icon: 'home' }, ...AREAS.map((a)
 
 let main, tabbar, syncBtn, gearBtn;
 
+// Logo: Weltkugel aus dem Farbring der Bereiche (Hintergrund per CSS), Längen-/Breitengrade und ein „S“
+const LOGO_SVG = '<svg viewBox="0 0 32 32" aria-hidden="true"><g fill="none" stroke="#fff" stroke-opacity=".45" stroke-width="1.1">'
+  + '<ellipse cx="16" cy="16" rx="7" ry="15"/><path d="M1 16h30M3.2 8.5h25.6M3.2 23.5h25.6"/></g>'
+  + '<text x="16" y="22" text-anchor="middle" font-size="18" font-weight="900" fill="#fff" font-family="-apple-system, system-ui, sans-serif" stroke="rgba(0,0,0,.18)" stroke-width=".6" paint-order="stroke">S</text></svg>';
+
 function route() {
   const [r, sub] = location.hash.replace(/^#\/?/, '').split('/');
   return { r: r || 'heute', sub: sub || '' };
@@ -53,7 +58,7 @@ function shell() {
   // Zahnrad für Körper (Import, Kalender, Ziele, Routinen) – nur im Bereich Körper sichtbar
   gearBtn = h('button.iconbtn.areagear', { 'aria-label': 'Einstellungen Körper', hidden: true, onclick: () => koerper.openMenu(render) }, icon('gear', 22));
   const top = h('header.topbar',
-    h('a.brand', { href: '#/heute' }, h('span.logo'), '4 Bereiche'),
+    h('a.brand', { href: '#/heute' }, h('span.logo', { html: LOGO_SVG }), "Sami's World"),
     h('div.row', gearBtn, syncBtn, h('a.iconbtn', { href: '#/einstellungen', 'aria-label': 'Einstellungen' }, icon('settings', 22))),
   );
   main = h('main', { id: 'main' });

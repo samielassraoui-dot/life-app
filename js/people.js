@@ -306,7 +306,7 @@ export function plansIcs(items) {
   const esc = (t) => String(t).replace(/\\/g, '\\\\').replace(/[,;]/g, (c) => `\\${c}`).replace(/\n/g, '\\n');
   const p2 = (n) => String(n).padStart(2, '0');
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//4 Bereiche//Life App//DE', 'CALSCALE:GREGORIAN'];
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Sami\'s World//DE', 'CALSCALE:GREGORIAN'];
   for (const { p, plan: pl } of items) {
     const title = `${planName(pl.art)} mit ${p.name}`;
     const d = pl.date.replace(/-/g, '');

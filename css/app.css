@@ -95,9 +95,10 @@ button { -webkit-user-select: none; user-select: none; }
 .logo {
   width: 22px; height: 22px; border-radius: 50%;
   background: conic-gradient(var(--koerper) 0 25%, var(--sinn) 0 50%, var(--leistung) 0 75%, var(--contact) 0);
-  -webkit-mask: radial-gradient(circle, transparent 4px, #000 4.5px);
-  mask: radial-gradient(circle, transparent 4px, #000 4.5px);
+  overflow: hidden; display: inline-grid; flex: none;
 }
+.logo svg { width: 100%; height: 100%; display: block; }
+.brand .logo { width: 28px; height: 28px; }
 
 #main {
   max-width: 640px; margin: 0 auto;
@@ -1400,10 +1401,10 @@ body[data-area="koerper"] { background: var(--bg); }
 .wrange::-webkit-slider-thumb { -webkit-appearance: none; width: 24px; height: 24px; border-radius: 50%; background: var(--koerper); border: 3px solid var(--card); box-shadow: 0 1px 4px rgba(0, 0, 0, .2); }
 .wrange::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: var(--koerper); border: 3px solid var(--card); }
 
-/* ---------- Todos (Violett) ---------- */
+/* ---------- Todos (Grün) ---------- */
 
-:root { --todos: #7b56d6; --todos-soft: #efe9fb; }
-@media (prefers-color-scheme: dark) { :root { --todos: #a585f0; --todos-soft: #2b2342; } }
+:root { --todos: #3a9a48; --todos-soft: #e6f4e8; }
+@media (prefers-color-scheme: dark) { :root { --todos: #62c271; --todos-soft: #1d3322; } }
 .a-todos, .t-todos { --c: var(--todos); --c-soft: var(--todos-soft); }
 body[data-area="todos"] .sheet { --c: var(--todos); --c-soft: var(--todos-soft); }
 
@@ -1417,8 +1418,8 @@ body[data-area="todos"] .sheet { --c: var(--todos); --c-soft: var(--todos-soft);
 .td-hero {
   display: grid; grid-template-columns: 112px 1fr; gap: 16px; align-items: center;
   color: #fff; border-radius: 16px; padding: 16px;
-  background: linear-gradient(135deg, #7b56d6 0%, #a27ee8 100%);
-  box-shadow: 0 10px 30px rgba(123, 86, 214, .25);
+  background: linear-gradient(135deg, #2f8f3f 0%, #5cb85c 100%);
+  box-shadow: 0 10px 30px rgba(58, 154, 72, .25);
 }
 .td-ring { position: relative; width: 112px; height: 112px; }
 .td-ring svg { width: 100%; height: 100%; display: block; }
@@ -1487,3 +1488,4 @@ body[data-area="todos"] .sheet { --c: var(--todos); --c-soft: var(--todos-soft);
 .td-nums { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 .td-num { padding: 10px 2px; }
 .td-num span { white-space: normal; text-align: center; line-height: 1.2; font-size: 10.5px; }
+.brand { opacity: 1; color: color-mix(in srgb, var(--text) 78%, transparent); }
