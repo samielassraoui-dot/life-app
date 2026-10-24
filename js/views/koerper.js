@@ -667,7 +667,7 @@ function importView(refresh) {
     back(),
     h('header.hero', h('h1', 'Wochenplan importieren')),
     h('section.card',
-      h('p.muted', 'Kopiere den Code-Block aus deinem Claude-Chat und füge ihn hier ein. Essens-, Trainings- und Lernplan einzeln nacheinander.'),
+      h('p.muted', 'Kopiere den Code-Block aus deinem Claude-Chat und füge ihn hier ein. Essens- und Trainingsplan einzeln nacheinander. (Lernpläne importierst du unter Leistung.)'),
       area,
       msg,
       h('div.buttons',
@@ -691,7 +691,6 @@ function importView(refresh) {
       h('div.buttons',
         h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_MEALS) }, 'Vorlage Essensplan kopieren'),
         h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_TRAINING) }, 'Vorlage Trainingsplan kopieren'),
-        h('button.btn.ghost', { onclick: () => copy(ln.TEMPLATE_LERNPLAN) }, 'Vorlage Lernplan kopieren'),
       ),
     ),
   );

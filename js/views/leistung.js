@@ -1,11 +1,12 @@
 // Bereich Leistung – drei Reiter:
-//   Diese Woche  Lernfelder mit Ziel, Fertig-Kriterium, Teilschritten, „Heute gelernt“, Fokus-Timer
-//   Termine      Abgaben & Prüfungen mit Countdown
+//   Diese Woche  Heute-Karte (was ist dran, Timer, Erledigt), Hinweise, Lernfelder
+//   Termine      Abgaben & Prüfungen mit Countdown, Kalender-Export
 //   Rückblick    Zielstatus der letzten Wochen, Lernjournal
+// Dazu: Lernplan-Import und Wochen-Review.
 // Ton: klar, fokussiert, motivierend.
 import * as ln from '../learn.js';
 import * as week from '../week.js';
-import { h, icon, toast, iso, fromIso, addDays, weekStart, isoWeek, WD_SHORT, fmtShort, sheet, swipeLeft } from '../ui.js';
+import { h, icon, toast, iso, fromIso, addDays, weekStart, isoWeek, WD_SHORT, fmtShort, sheet, swipeLeft, saveFile } from '../ui.js';
 
 const TABS = [
   { id: 'woche', name: 'Diese Woche' },
@@ -14,19 +15,27 @@ const TABS = [
 ];
 
 let noteFor = null;        // gerade eingetragene Einheit → „Was habe ich gelernt?“
+let noteWhere = 'hero';    // wo das Notizfeld erscheint: Heute-Karte oder Feldkarte
+let heroField = null;      // per Pfeil gewähltes Feld (null = automatisch)
 let journalField = 'alle';
 let journalQuery = '';
 let tick = null;
+let pendingPlan = null;
 
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 const dayLabel = (d) => `${WD_SHORT[fromIso(d).getDay()]} ${fmtShort(fromIso(d))}`;
 
-function lastTab() {
+function ls(key, fallback = null) {
   try {
-    return localStorage.getItem('life4.leistungTab') || 'woche';
+    return localStorage.getItem(key) ?? fallback;
   } catch {
-    return 'woche';
+    return fallback;
   }
+}
+function lsSet(key, val) {
+  try {
+    localStorage.setItem(key, val);
+  } catch { /* egal */ }
 }
 
 export function render(sub, refresh) {
@@ -34,15 +43,15 @@ export function render(sub, refresh) {
   const fin = ln.finishTimerIfDue();
   if (fin) {
     noteFor = fin.key;
+    noteWhere = 'hero';
     setTimeout(() => toast(`${fin.min} Minuten ${ln.fieldName(fin.feld)} geschafft – Einheit eingetragen`), 50);
   }
   if (sub === 'review') return reviewView(refresh);
-  const tab = TABS.some((t) => t.id === sub) ? sub : lastTab();
-  try {
-    localStorage.setItem('life4.leistungTab', tab);
-  } catch { /* egal */ }
+  if (sub === 'import') return importView();
+  const tab = TABS.some((t) => t.id === sub) ? sub : ls('life4.leistungTab', 'woche');
+  lsSet('life4.leistungTab', tab);
   const views = { woche: weekTab, termine: termineTab, rueckblick: reviewTab };
-  return h('div.view.a-leistung.contact-view',
+  return h('div.view.a-leistung.lview',
     h('div.segs.ctabs', TABS.map((t) => h(`a.seg${t.id === tab ? '.on' : ''}`, { href: `#/leistung/${t.id}` }, t.name))),
     views[tab](refresh),
   );
@@ -52,7 +61,7 @@ function secTitle(ic, text, right) {
   return h('div.sec-title', h('span.sec-icon', icon(ic, 18)), h('h2', text), right || null);
 }
 
-// ---------- Aufklappen (wie bei Körper, Zustand pro Woche gemerkt) ----------
+// ---------- Aufklappen (Zustand gemerkt) ----------
 
 const OPEN_KEY = 'life4.leistungOpen';
 function openMap() {
@@ -63,11 +72,9 @@ function openMap() {
   }
 }
 function rememberOpen(id, val) {
-  try {
-    const m = openMap();
-    m[id] = val;
-    localStorage.setItem(OPEN_KEY, JSON.stringify(m));
-  } catch { /* egal */ }
+  const m = openMap();
+  m[id] = val;
+  lsSet(OPEN_KEY, JSON.stringify(m));
 }
 function collapsible(id, auto, head, content, cls) {
   const open = openMap()[id] ?? auto;
@@ -82,13 +89,35 @@ function collapsible(id, auto, head, content, cls) {
   return sec;
 }
 
-const fieldTag = (f) => h(`span.ftag.f-${f}`, ln.FIELDS.find((x) => x.id === f)?.short || f);
+const fieldTag = (f) => h(`span.ftag.f-${f}`, ln.fieldShort(f));
 const cdBadge = (datum) => h(`span.cd.u-${ln.urgency(datum)}`, ln.countdown(datum));
+const fieldIcon = (f, size = 18) => h(`span.f-icon.f-${f}`, icon(ln.FIELD_ICON[f], size));
+
+// Tippen = kurz, lange drücken = andere Aktion (z. B. Timer-Dauer wählen)
+function pressable(btn, onTap, onLong) {
+  let tm = null;
+  let long = false;
+  btn.addEventListener('pointerdown', () => {
+    long = false;
+    tm = setTimeout(() => {
+      long = true;
+      navigator.vibrate?.(10);
+      onLong();
+    }, 480);
+  });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(ev, () => clearTimeout(tm));
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (!long) onTap();
+  });
+  return btn;
+}
 
 // ---------- Ziel festlegen / bearbeiten ----------
 
-function goalSheet(monday, f, refresh, preset = null) {
-  const g = preset || ln.goal(monday, f) || {};
+function goalSheet(monday, f, refresh) {
+  const g = ln.goal(monday, f) || {};
   const ziel = h('input.input', { value: g.ziel || '', placeholder: 'z. B. Kapitel 4 wiederholen' });
   const fertig = h('input.input', { value: g.fertig_wenn || '', placeholder: 'z. B. Alle Übungsaufgaben gelöst' });
   const einheiten = h('input.input.days', { inputmode: 'numeric', value: g.einheiten || 3 });
@@ -101,14 +130,22 @@ function goalSheet(monday, f, refresh, preset = null) {
     h('label.field', h('span', 'Teilschritte (optional)'), schritte),
     err,
     h('div.sheet-btns',
+      g.ziel && h('button.btn.ghost', {
+        onclick: () => {
+          if (!confirm(`Ziel für ${ln.fieldName(f)} in dieser Woche löschen?`)) return;
+          ln.setGoal(monday, f, null);
+          sh.close();
+          refresh();
+        },
+      }, 'Löschen'),
       h('button.btn.ghost', { onclick: () => sh.close() }, 'Abbrechen'),
       h('button.btn.primary', {
         onclick: () => {
           if (!ziel.value.trim()) return (err.textContent = 'Bitte ein Ziel eintragen.');
           if (!fertig.value.trim()) return (err.textContent = '„Fertig, wenn …“ ist Pflicht – woran erkennst du, dass es geschafft ist?');
-          const old = (ln.goal(monday, f)?.schritte || []);
+          const old = g.schritte || [];
           ln.setGoal(monday, f, {
-            ...(ln.goal(monday, f) || {}),
+            ...g,
             ziel: ziel.value.trim(),
             fertig_wenn: fertig.value.trim(),
             einheiten: Math.max(0, parseInt(einheiten.value, 10) || 0),
@@ -122,43 +159,44 @@ function goalSheet(monday, f, refresh, preset = null) {
       }, 'Speichern'),
     ),
   );
+  setTimeout(() => !g.ziel && ziel.focus(), 250);
 }
 
-// ---------- Fokus-Timer ----------
+// ---------- Timer-Dauer wählen ----------
 
-function timerCard(refresh) {
-  const t = ln.timer();
-  if (!t) return null;
-  const left = h('b.tm-left');
-  const bar = h('i');
-  const paint = () => {
-    const ms = Math.max(0, t.start + t.min * 60000 - Date.now());
-    left.textContent = `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
-    bar.style.width = `${100 - (ms / (t.min * 60000)) * 100}%`;
-    if (ms <= 0) {
-      clearInterval(tick);
-      refresh();
-    }
-  };
-  clearInterval(tick);
-  tick = setInterval(() => (document.contains(left) ? paint() : clearInterval(tick)), 1000);
-  const card = h('section.card.timer-card',
-    h('div.row.between',
-      h('div', h('p.small.muted', `Fokus-Timer · ${ln.fieldName(t.feld)} · ${t.min} Min`), left),
-      h('button.btn.ghost.sm', {
+function timerSheet(f, refresh) {
+  let min = ln.timerMinutes();
+  const custom = h('input.input.days', { inputmode: 'numeric', value: min, 'aria-label': 'Minuten' });
+  const chips = h('div.chips');
+  const paint = () => chips.replaceChildren(...[15, 25, 30, 45, 60, 90].map((m) => h(`button.chip${m === min ? '.on' : ''}`, {
+    onclick: () => {
+      min = m;
+      custom.value = m;
+      paint();
+    },
+  }, `${m} Min`)));
+  paint();
+  custom.addEventListener('input', () => {
+    min = parseInt(custom.value, 10) || 0;
+    paint();
+  });
+  const sh = sheet(`Fokus-Timer · ${ln.fieldName(f)}`,
+    h('p.muted', 'Wie lange willst du dich konzentrieren? Die Dauer wird für das nächste Mal gemerkt.'),
+    chips,
+    h('div.daysrow', h('span.small.muted', 'Eigene Dauer (Minuten)'), custom),
+    h('div.sheet-btns',
+      h('button.btn.ghost', { onclick: () => sh.close() }, 'Abbrechen'),
+      h('button.btn.primary', {
         onclick: () => {
-          if (!confirm('Timer abbrechen? Es wird keine Einheit eingetragen.')) return;
-          ln.stopTimer();
-          clearInterval(tick);
+          if (min < 1 || min > 240) return toast('Bitte 1 bis 240 Minuten wählen', 'error');
+          ln.setTimerMinutes(min);
+          ln.startTimer(f, min);
+          sh.close();
           refresh();
         },
-      }, 'Abbrechen'),
+      }, 'Starten'),
     ),
-    h('div.bar.big', bar),
-    h('p.small.muted', 'Nach Ablauf wird automatisch eine Einheit eingetragen – auch wenn die App zwischendurch geschlossen war.'),
   );
-  paint();
-  return card;
 }
 
 // ---------- Reiter 1: Diese Woche ----------
@@ -166,38 +204,233 @@ function timerCard(refresh) {
 function weekTab(refresh) {
   const mon = weekStart();
   const fk = ln.fokus(mon);
-  const fields = [...ln.FIELDS].sort((a, b) => (b.id === fk) - (a.id === fk));
-  const stats = ln.FIELDS.map((f) => {
-    const g = ln.goal(mon, f.id);
-    return { f, planned: g?.einheiten || 0, done: ln.unitsOfWeek(mon, f.id).length };
-  });
-  const planned = stats.reduce((s, x) => s + x.planned, 0);
-  const done = stats.reduce((s, x) => s + Math.min(x.done, x.planned || x.done), 0);
-  const pct = planned ? Math.round((Math.min(done, planned) / planned) * 100) : 0;
-  const r = 30;
-  const c = 2 * Math.PI * r;
+  const withGoal = ln.FIELDS.filter((f) => ln.goal(mon, f.id));
+  const without = ln.FIELDS.filter((f) => !ln.goal(mon, f.id));
+  withGoal.sort((a, b) => (b.id === fk) - (a.id === fk));
 
   return [
-    timerCard(refresh),
-    h('section.card.week-head.lhead',
-      h('div.wh-ring', h('span', { html: `<svg viewBox="0 0 72 72"><circle cx="36" cy="36" r="${r}" class="t"/><circle cx="36" cy="36" r="${r}" class="v" stroke-dasharray="${(c * pct) / 100} ${c}" transform="rotate(-90 36 36)"/></svg>` }), h('b', planned ? `${Math.min(done, planned)}/${planned}` : '–')),
-      h('div.wh-text',
-        h('p.small.muted', `KW ${isoWeek(mon)} · ${fmtShort(mon)}–${fmtShort(addDays(mon, 6))}`),
-        h('h2', planned ? `${Math.min(done, planned)} von ${planned} Einheiten` : 'Noch keine Wochenziele'),
-        h('div.minibars', stats.map(({ f, planned: p, done: d }) => h(`div.mb${f.id === fk ? '.fk' : ''}`,
-          h('span.mb-name', f.short),
-          h('div.mb-track', h('i', { style: { width: `${p ? Math.min(100, (d / p) * 100) : 0}%` } })),
-          h('span.mb-val', p ? `${d}/${p}` : d ? `${d}` : '–'),
-        ))),
-      ),
-    ),
-    fields.map((f) => fieldCard(mon, f.id, f.id === fk, refresh)),
-    h('a.link.center.limport', { href: '#/koerper/import' }, 'Lernplan importieren'),
-    h('a.card.review.lreview', { href: '#/leistung/review' },
-      h('span.review-icon', icon('calendar', 22)),
-      h('div', h('p.label', 'Wochen-Review Leistung'), h('p.muted', 'Ziele bewerten, übernehmen oder neu setzen')),
+    hero(mon, refresh),
+    fokusBanner(mon, refresh),
+    reviewBanner(mon),
+    withGoal.map((f) => fieldCard(mon, f.id, f.id === fk, refresh)),
+    without.length > 0 && h('div.lf-empties', without.map((f) => h(`button.card.lf-empty.f-${f.id}`, { onclick: () => goalSheet(mon, f.id, refresh) },
+      fieldIcon(f.id),
+      h('span', h('b', ln.fieldName(f.id)), h('span.muted', ' · Ziel setzen')),
+      h('span.lf-plus', icon('plus', 18)),
+    ))),
+    h('div.lf-foot',
+      h('a.link', { href: '#/leistung/import' }, icon('upload', 16), 'Lernplan importieren'),
+      h('a.link', { href: '#/leistung/review' }, icon('calendar', 16), 'Wochen-Review'),
     ),
   ];
+}
+
+// Kleiner Wochenring rechts oben in der Heute-Karte
+function miniRing(mon) {
+  let planned = 0;
+  let done = 0;
+  for (const f of ln.FIELDS) {
+    const g = ln.goal(mon, f.id);
+    if (!g?.einheiten) continue;
+    planned += g.einheiten;
+    done += Math.min(g.einheiten, ln.unitsOfWeek(mon, f.id).length);
+  }
+  const r = 15;
+  const c = 2 * Math.PI * r;
+  const pct = planned ? done / planned : 0;
+  return h('div.lh-ring',
+    h('span', { html: `<svg viewBox="0 0 38 38"><circle cx="19" cy="19" r="${r}" class="t"/><circle cx="19" cy="19" r="${r}" class="v" stroke-dasharray="${c * pct} ${c}" transform="rotate(-90 19 19)"/></svg>` }),
+    h('span.lh-ring-text', h('b', planned ? `${done}/${planned}` : '–'), h('span', 'Einheiten')),
+  );
+}
+
+function hero(mon, refresh) {
+  const t = ln.timer();
+  const order = ln.todayOrder(mon);
+  const withGoal = ln.FIELDS.map((f) => f.id).filter((id) => ln.goal(mon, id));
+  const list = [...order, ...withGoal.filter((id) => !order.includes(id))];
+  if (heroField && !list.includes(heroField)) heroField = null;
+  const allDone = withGoal.length > 0 && order.length === 0;
+  const cur = heroField || (allDone ? null : list[0]);
+
+  const top = (label) => h('div.lh-top', h('p.lh-eyebrow', label), miniRing(mon));
+  const nav = (content) => {
+    if (list.length < 2 && !(allDone && list.length)) return h('div.lh-main', content);
+    const idx = cur ? list.indexOf(cur) : -1;
+    const go = (d) => {
+      heroField = list[(idx + d + list.length) % list.length];
+      if (idx === -1) heroField = d > 0 ? list[0] : list[list.length - 1];
+      if (!allDone && heroField === list[0]) heroField = null; // zurück bei der automatischen Wahl
+      refresh();
+    };
+    return h('div.lh-main.nav',
+      h('button.navbtn', { onclick: () => go(-1), 'aria-label': 'Vorheriges Feld' }, icon('back', 20)),
+      h('div.lh-center', content),
+      h('button.navbtn.flip', { onclick: () => go(1), 'aria-label': 'Nächstes Feld' }, icon('back', 20)),
+    );
+  };
+
+  // Timer läuft
+  if (t) {
+    const left = h('b.lh-timer');
+    const bar = h('i');
+    const paint = () => {
+      const tt = ln.timer();
+      if (!tt) return clearInterval(tick);
+      const ms = Math.max(0, tt.start + tt.min * 60000 - Date.now());
+      left.textContent = `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}`;
+      bar.style.width = `${100 - (ms / (tt.min * 60000)) * 100}%`;
+      if (ms <= 0) {
+        clearInterval(tick);
+        refresh();
+      }
+    };
+    clearInterval(tick);
+    tick = setInterval(() => (document.contains(left) ? paint() : clearInterval(tick)), 1000);
+    paint();
+    return h('section.l-hero.timer',
+      top(`Fokus-Timer · ${t.min} Min`),
+      h('div.lh-main', h('div.lh-center', h('p.lh-field', fieldIcon(t.feld, 20), ln.fieldName(t.feld)), left)),
+      h('div.hbar', bar),
+      h('div.lh-btns',
+        h('button.lh-btn.soft', { onclick: () => { ln.extendTimer(5); refresh(); } }, '+5 Min'),
+        h('button.lh-btn.soft', {
+          onclick: () => {
+            if (!confirm('Timer abbrechen? Es wird keine Einheit eingetragen.')) return;
+            ln.stopTimer();
+            clearInterval(tick);
+            refresh();
+          },
+        }, 'Abbrechen'),
+      ),
+      h('p.lh-hint', 'Nach Ablauf wird die Einheit automatisch eingetragen – auch wenn die App zwischendurch zu war.'),
+    );
+  }
+
+  // Notiz nach „Erledigt“
+  if (noteFor && noteWhere === 'hero') {
+    const u = ln.allUnits().find((x) => x.key === noteFor);
+    if (u) {
+      const input = h('input.input', { placeholder: 'Was habe ich gelernt? (ein Satz)', enterkeyhint: 'done' });
+      const save = () => {
+        if (input.value.trim()) ln.setNote(noteFor, input.value.trim());
+        noteFor = null;
+        refresh();
+      };
+      input.addEventListener('keydown', (e) => e.key === 'Enter' && save());
+      setTimeout(() => input.focus(), 60);
+      return h('section.l-hero',
+        top('Einheit eingetragen'),
+        h('p.lh-field', fieldIcon(u.feld, 20), ln.fieldName(u.feld)),
+        h('p.lh-sub', 'Was habe ich gelernt? Ein Satz reicht.'),
+        input,
+        h('div.lh-btns',
+          h('button.lh-btn', { onclick: save }, 'Speichern'),
+          h('button.lh-btn.soft', { onclick: () => { noteFor = null; refresh(); } }, 'Überspringen'),
+        ),
+      );
+    }
+    noteFor = null;
+  }
+
+  // Noch keine Ziele
+  if (!withGoal.length) {
+    return h('section.l-hero',
+      top(`KW ${isoWeek(mon)}`),
+      h('p.lh-title', 'Noch keine Wochenziele'),
+      h('p.lh-sub', 'Setze dir pro Lernfeld ein Ziel – oder importiere deinen Lernplan aus Claude.'),
+      h('div.lh-btns',
+        h('a.lh-btn', { href: '#/leistung/import' }, icon('upload', 18), 'Lernplan importieren'),
+      ),
+    );
+  }
+
+  // Alles erfüllt
+  if (!cur) {
+    return h('section.l-hero.done',
+      top(`KW ${isoWeek(mon)}`),
+      nav([
+        h('span.lh-check', icon('check', 28)),
+        h('p.lh-title', 'Woche geschafft'),
+        h('p.lh-sub', 'Alle Wochenziele erfüllt. Alles Weitere ist Bonus.'),
+      ]),
+    );
+  }
+
+  const g = ln.goal(mon, cur);
+  const step = g.schritte.find((s) => !s.done);
+  const n = ln.unitsOfWeek(mon, cur).length;
+  const isDone = ln.fulfilled(mon, cur);
+  const min = ln.timerMinutes();
+  const timerBtn = pressable(
+    h('button.lh-btn.soft.press', { 'aria-label': `Fokus-Timer ${min} Minuten, lange drücken für andere Dauer` }, icon('play', 16), `${min} Min`),
+    () => {
+      ln.startTimer(cur, min);
+      refresh();
+    },
+    () => timerSheet(cur, refresh),
+  );
+
+  return h(`section.l-hero${isDone ? '.done' : ''}`,
+    top(heroField && heroField !== order[0] ? 'Gewählt' : 'Heute dran'),
+    nav([
+      h('p.lh-field.big', fieldIcon(cur, 22), ln.fieldName(cur)),
+      h('p.lh-sub', isDone ? 'Wochenziel erfüllt – alles Weitere ist Bonus.' : step ? h('span', 'Nächster Schritt: ', h('b', step.text)) : h('span', 'Ziel: ', h('b', g.ziel))),
+      h('p.lh-count', `${n}/${g.einheiten || 0} Einheiten diese Woche`),
+    ]),
+    h('div.lh-btns',
+      timerBtn,
+      h('button.lh-btn', {
+        onclick: () => {
+          noteFor = ln.addUnit({ feld: cur });
+          noteWhere = 'hero';
+          toast(`Stark – ${ln.fieldName(cur)} erledigt`);
+          refresh();
+        },
+      }, icon('check', 18), 'Erledigt'),
+    ),
+    h('p.lh-hint', 'Timer lange drücken = andere Dauer'),
+  );
+}
+
+function fokusBanner(mon, refresh) {
+  const fk = ln.fokus(mon);
+  const hidden = JSON.parse(ls('life4.fokusHintOff', '[]'));
+  const t = ln.termine().find((x) => {
+    const d = ln.daysUntil(x.datum);
+    return d >= 0 && d <= 14 && x.feld !== fk && !hidden.includes(`${x.id}:${iso(mon)}`);
+  });
+  if (!t) return null;
+  return h('section.card.banner.warn',
+    h('p', h('b', `${ln.terminTitle(t)} ${ln.countdown(t.datum)}:`), ` ${ln.fieldName(t.feld)} als Fokusfeld setzen?`),
+    h('div.banner-btns',
+      h('button.btn.primary.sm', {
+        onclick: () => {
+          ln.setFokus(mon, t.feld);
+          toast(`${ln.fieldName(t.feld)} ist diese Woche dein Fokus`);
+          refresh();
+        },
+      }, 'Als Fokus setzen'),
+      h('button.link', {
+        onclick: () => {
+          lsSet('life4.fokusHintOff', JSON.stringify([...hidden, `${t.id}:${iso(mon)}`]));
+          refresh();
+        },
+      }, 'Nicht jetzt'),
+    ),
+  );
+}
+
+function reviewBanner(mon) {
+  const day = new Date().getDay();
+  if (day !== 6 && day !== 0) return null;
+  const next = addDays(mon, 7);
+  if (ln.FIELDS.some((f) => ln.goal(next, f.id))) return null;
+  return h('a.card.banner.plan', { href: '#/leistung/review' },
+    h('span.sec-icon', icon('calendar', 18)),
+    h('span', h('b', `Wochenziele für KW ${isoWeek(next)} setzen`), h('span.small.muted.block', 'Altes Ziel bewerten, neues festlegen')),
+    h('span.lf-plus.flip', icon('back', 18)),
+  );
 }
 
 function fieldCard(mon, f, isFokus, refresh) {
@@ -206,106 +439,107 @@ function fieldCard(mon, f, isFokus, refresh) {
   const nt = ln.nextTermin(f);
   const days = Array.from({ length: 7 }, (_, i) => iso(addDays(mon, i)));
   const today = iso();
-  const doneToday = units.some((u) => u.date === today);
 
   const head = h('button.kbox-head',
-    h('span.sec-icon', icon(isFokus ? 'sparkle' : 'leistung', 18)),
+    fieldIcon(f),
     h('span.kbox-title',
       h('span.lf-name', h('h2', ln.fieldName(f)), isFokus && h('span.fk-badge', 'Fokus')),
-      h('span.kbox-info', g?.ziel || 'Noch kein Ziel für diese Woche'),
+      h('span.kbox-info', g.ziel),
       h('span.lf-meta',
-        h('span', `${units.length}/${g?.einheiten || 0} Einheiten`),
-        nt && h('span.lf-termin', '· ', nt.titel, ' ', cdBadge(nt.datum)),
+        h('span', `${units.length}/${g.einheiten || 0} Einheiten`),
+        nt && h(`span.tchip.u-${ln.urgency(nt.datum)}`, `${ln.terminTitle(nt)} · ${ln.countdown(nt.datum)}`),
       ),
     ),
     h('span.kbox-chev', icon('back', 18)),
   );
 
-  const noteBox = noteFor && units.find((u) => u.key === noteFor) && (() => {
-    const ta = h('input.input', { placeholder: 'Was habe ich gelernt? (ein Satz)', enterkeyhint: 'done' });
+  const noteBox = noteFor && noteWhere === 'card' && units.find((u) => u.key === noteFor) && (() => {
+    const input = h('input.input', { placeholder: 'Was habe ich gelernt? (ein Satz)', enterkeyhint: 'done' });
     const save = () => {
-      if (ta.value.trim()) ln.setNote(noteFor, ta.value.trim());
+      if (input.value.trim()) ln.setNote(noteFor, input.value.trim());
       noteFor = null;
       refresh();
     };
-    ta.addEventListener('keydown', (e) => e.key === 'Enter' && save());
-    setTimeout(() => ta.focus(), 60);
+    input.addEventListener('keydown', (e) => e.key === 'Enter' && save());
+    setTimeout(() => input.focus(), 60);
     return h('div.form.note-form',
-      ta,
+      input,
       h('div.buttons', h('button.btn.primary', { onclick: save }, 'Speichern'), h('button.btn.ghost', { onclick: () => { noteFor = null; refresh(); } }, 'Überspringen')),
     );
   })();
 
   const content = [
-    !g && [
-      h('p.muted', 'Lege fest, was du diese Woche erreichen willst – und woran du erkennst, dass es fertig ist.'),
-      h('button.btn.primary.full', { onclick: () => goalSheet(mon, f, refresh) }, 'Ziel festlegen'),
-    ],
-    g && [
-      h('div.lf-goal', h('span.small.muted', 'Ziel'), h('p', g.ziel)),
-      h('div.lf-goal.done-crit', h('span.small.muted', 'Fertig, wenn …'), h('p', g.fertig_wenn)),
-      g.schritte.length > 0 && h('div.steps', g.schritte.map((s, i) => h(`button.check${s.done ? '.done' : ''}`, {
-        onclick: () => {
-          ln.toggleStep(mon, f, i);
-          refresh();
-        },
-      }, h('span.box', icon('check', 16)), h('span.check-name', s.text)))),
-    ],
+    h('div.lf-goal.done-crit', h('span.small.muted', 'Fertig, wenn …'), h('p', g.fertig_wenn)),
+    g.schritte.length > 0 && h('div.steps', g.schritte.map((s, i) => h(`button.check${s.done ? '.done' : ''}`, {
+      onclick: () => {
+        ln.toggleStep(mon, f, i);
+        refresh();
+      },
+    }, h('span.box', icon('check', 16)), h('span.check-name', s.text)))),
     h('div.wdots', days.map((d) => h(`span.wdot${units.some((u) => u.date === d) ? '.on' : ''}${d === today ? '.today' : ''}`, h('i'), WD_SHORT[fromIso(d).getDay()]))),
     noteBox,
-    !noteBox && h('div.lf-actions',
-      h(`button.btn.${doneToday ? 'ghost' : 'primary'}`, {
+    h('div.lf-links',
+      h('button.link', {
         onclick: () => {
           noteFor = ln.addUnit({ feld: f });
+          noteWhere = 'card';
           rememberOpen(`f-${f}`, true);
-          toast(`Stark – ${ln.fieldName(f)} heute gelernt`);
+          toast(`${ln.fieldName(f)}: Einheit eingetragen`);
           refresh();
         },
-      }, icon('check', 18), doneToday ? 'Noch eine' : 'Heute gelernt'),
-      h('button.btn.ghost.sm.tm', { onclick: () => { ln.startTimer(f, 25); refresh(); }, disabled: !!ln.timer() }, icon('bell', 16), '25'),
-      h('button.btn.ghost.sm.tm', { onclick: () => { ln.startTimer(f, 45); refresh(); }, disabled: !!ln.timer() }, icon('bell', 16), '45'),
-    ),
-    h('div.lf-links',
-      g && h('button.link', { onclick: () => goalSheet(mon, f, refresh) }, 'Ziel bearbeiten'),
+      }, '+ Einheit'),
+      h('button.link', { onclick: () => goalSheet(mon, f, refresh) }, 'Ziel bearbeiten'),
       h('button.link', {
         onclick: () => {
           ln.setFokus(mon, isFokus ? null : f);
           refresh();
         },
-      }, isFokus ? 'Fokus entfernen' : 'Als Fokus setzen'),
+      }, isFokus ? 'Kein Fokus' : 'Als Fokus'),
     ),
   ];
 
-  return collapsible(`f-${f}`, isFokus, head, [
-    h('div.kbox-bar', h('i', { style: { width: `${g?.einheiten ? Math.min(100, (units.length / g.einheiten) * 100) : 0}%` } })),
+  return collapsible(`f-${f}`, false, head, [
+    h('div.kbox-bar', h('i', { style: { width: `${g.einheiten ? Math.min(100, (units.length / g.einheiten) * 100) : 0}%` } })),
     h('div.kbox-body', h('div.kbox-inner', content)),
-  ], `section.card.kbox.lfield${isFokus ? '.fokus' : ''}`);
+  ], `section.card.kbox.lfield.f-${f}${isFokus ? '.fokus' : ''}`);
 }
 
 // ---------- Reiter 2: Termine ----------
 
+async function exportIcs(list) {
+  if (!list.length) return toast('Keine anstehenden Termine', 'error');
+  const name = list.length === 1 ? `termin-${list[0].datum}.ics` : 'lerntermine.ics';
+  await saveFile(new Blob([ln.termineIcs(list)], { type: 'text/calendar' }), name, 'text/calendar');
+}
+
 function terminSheet(refresh, t = null) {
   let feld = t?.feld || 'uni';
-  const titel = h('input.input', { value: t?.titel || '', placeholder: 'z. B. Klausur Personalwirtschaft' });
+  const titel = h('input.input', { value: t?.titel || '', placeholder: 'z. B. Klausur' });
+  const modul = h('input.input', { value: t?.modul || '', placeholder: 'z. B. Statistik (optional)' });
   const datum = h('input.input', { type: 'date', value: t?.datum || iso(addDays(new Date(), 14)) });
-  const box = h('div.segs.wrap');
-  const paint = () => box.replaceChildren(...ln.FIELDS.map((f) => h(`button.seg${feld === f.id ? '.on' : ''}`, { onclick: () => { feld = f.id; paint(); } }, f.short)));
+  const box = h('div.chips');
+  const paint = () => box.replaceChildren(...ln.FIELDS.map((f) => h(`button.chip${feld === f.id ? '.on' : ''}`, { onclick: () => { feld = f.id; paint(); } }, f.short)));
   paint();
   const err = h('p.error');
   const sh = sheet(t ? 'Termin bearbeiten' : 'Neuer Termin',
     h('label.field', h('span', 'Titel'), titel),
+    h('label.field', h('span', 'Modul (optional)'), modul),
     h('label.field', h('span', 'Datum'), datum),
     h('div.field', h('span', 'Lernfeld'), box),
     err,
+    t && h('button.btn.ghost.full', { onclick: () => exportIcs([t]) }, icon('calendar', 18), 'In Apple Kalender eintragen'),
     h('div.sheet-btns',
       h('button.btn.ghost', { onclick: () => sh.close() }, 'Abbrechen'),
       h('button.btn.primary', {
         onclick: () => {
           if (!titel.value.trim() || !datum.value) return (err.textContent = 'Bitte Titel und Datum eintragen.');
-          ln.saveTermin(t?.id, { titel: titel.value.trim(), datum: datum.value, feld });
+          const data = { ...(t ? { seit: t.seit } : {}), titel: titel.value.trim(), datum: datum.value, feld };
+          if (!data.seit) delete data.seit;
+          if (modul.value.trim()) data.modul = modul.value.trim();
+          const id = ln.saveTermin(t?.id, data);
           sh.close();
-          toast('Termin gespeichert');
           refresh();
+          toast('Termin gespeichert', '', { label: 'In Kalender', fn: () => exportIcs([{ id, ...data }]) });
         },
       }, 'Speichern'),
     ),
@@ -317,36 +551,41 @@ function termineTab(refresh) {
   const today = iso();
   const upcoming = all.filter((t) => t.datum >= today);
   const past = all.filter((t) => t.datum < today).reverse();
-  const mon = weekStart();
-  const fk = ln.fokus(mon);
-  const soon = upcoming.find((t) => ln.daysUntil(t.datum) < 14 && t.feld !== fk);
+  const showHelp = upcoming.length > 0 && !ls('life4.terminHelp');
+  if (showHelp) lsSet('life4.terminHelp', '1');
 
-  const row = (t) => swipeLeft(
-    h(`div.trow.u-${ln.urgency(t.datum)}`,
-      h('div.tr-date', h('b', fromIso(t.datum).getDate()), h('span', MONTHS_SHORT[fromIso(t.datum).getMonth()])),
-      h('div.tr-main', h('b', t.titel), h('span.small.muted.block', fieldTag(t.feld), ` ${dayLabel(t.datum)}`)),
-      cdBadge(t.datum),
-    ),
-    {
-      label: 'Löschen',
-      onTap: () => terminSheet(refresh, t),
-      onSwipe: () => {
-        ln.deleteTermin(t.id);
-        refresh();
-        toast(`„${t.titel}“ gelöscht`, '', { label: 'Rückgängig', fn: () => { const { id, ...d } = t; ln.saveTermin(id, d); refresh(); } });
+  const row = (t) => {
+    const since = t.seit || iso(weekStart());
+    const n = ln.unitsSince(t.feld, since);
+    return swipeLeft(
+      h(`div.trow.u-${ln.urgency(t.datum)}`,
+        h('div.tr-date', h('b', fromIso(t.datum).getDate()), h('span', MONTHS_SHORT[fromIso(t.datum).getMonth()])),
+        h('div.tr-main',
+          h('b', ln.terminTitle(t)),
+          h('span.small.muted.block', fieldTag(t.feld), ` ${dayLabel(t.datum)}`),
+          t.datum >= today && h('span.small.muted.block.tr-units', `Lerneinheiten ${ln.fieldShort(t.feld)} seit ${fmtShort(fromIso(since))}: `, h('b', n)),
+        ),
+        cdBadge(t.datum),
+      ),
+      {
+        label: 'Löschen',
+        onTap: () => terminSheet(refresh, t),
+        onSwipe: () => {
+          ln.deleteTermin(t.id);
+          refresh();
+          toast(`„${ln.terminTitle(t)}“ gelöscht`, '', { label: 'Rückgängig', fn: () => { const { id, ...d } = t; ln.saveTermin(id, d); refresh(); } });
+        },
       },
-    },
-  );
+    );
+  };
 
   return [
-    soon && h('section.card.fokus-hint',
-      h('p', h('b', `${soon.titel} ${ln.countdown(soon.datum)}.`), ` ${ln.fieldName(soon.feld)} als Fokusfeld setzen?`),
-      h('button.btn.primary.sm', { onclick: () => { ln.setFokus(mon, soon.feld); toast(`${ln.fieldName(soon.feld)} ist diese Woche dein Fokus`); refresh(); } }, 'Als Fokus setzen'),
-    ),
+    fokusBanner(weekStart(), refresh),
     h('section.card',
       secTitle('calendar', 'Anstehend', h('button.link', { onclick: () => terminSheet(refresh) }, '+ Termin')),
       upcoming.length ? h('div.klist', upcoming.map(row)) : h('p.muted', 'Keine anstehenden Termine. Trag Abgaben und Prüfungen ein – oder importiere sie mit dem Lernplan.'),
-      upcoming.length > 0 && h('p.small.muted', 'Antippen = bearbeiten · nach links wischen = löschen'),
+      showHelp && h('p.small.muted', 'Antippen = bearbeiten · nach links wischen = löschen'),
+      upcoming.length > 0 && h('button.btn.ghost.full', { onclick: () => exportIcs(upcoming) }, icon('calendar', 18), 'Alle in Apple Kalender eintragen'),
     ),
     past.length > 0 && collapsible('past', false,
       h('button.kbox-head', h('span.sec-icon', icon('list', 18)), h('span.kbox-title', h('h2', `Vergangen (${past.length})`)), h('span.kbox-chev', icon('back', 18))),
@@ -357,12 +596,26 @@ function termineTab(refresh) {
 
 // ---------- Reiter 3: Rückblick ----------
 
-function reviewTab(refresh) {
+function reviewTab() {
   const units = ln.allUnits();
+  const notes = units.filter((u) => u.notiz);
   const journalList = h('div.journal');
   const paintJournal = () => {
     const q = journalQuery.trim().toLowerCase();
-    const list = units.filter((u) => u.notiz && (journalField === 'alle' || u.feld === journalField) && (!q || u.notiz.toLowerCase().includes(q)));
+    const list = notes.filter((u) => (journalField === 'alle' || u.feld === journalField) && (!q || u.notiz.toLowerCase().includes(q)));
+    if (!notes.length) {
+      journalList.replaceChildren(
+        h('div.tl-item.example',
+          h('span.tl-dot.lf-dot', icon('pen', 13)),
+          h('div.tl-body',
+            h('div.tl-top', fieldTag('sap'), h('span.small.muted', 'Beispiel')),
+            h('p.tl-note', 'Zeitarten werden in der Tabelle V_T554S gepflegt – die Zeitbewertung greift erst danach.'),
+          ),
+        ),
+        h('p.small.muted', 'So sieht ein Eintrag aus. Nach „Erledigt“ kannst du festhalten, was du gelernt hast – ein Satz reicht.'),
+      );
+      return;
+    }
     journalList.replaceChildren(...(list.length
       ? list.map((u) => h('div.tl-item',
         h('span.tl-dot.lf-dot', icon('pen', 13)),
@@ -371,10 +624,10 @@ function reviewTab(refresh) {
           h('p.tl-note', u.notiz),
         ),
       ))
-      : [h('p.muted', q || journalField !== 'alle' ? 'Keine passenden Einträge.' : 'Noch keine Notizen. Nach „Heute gelernt“ kannst du einen Satz festhalten.')]));
+      : [h('p.muted', 'Keine passenden Einträge.')]));
   };
   paintJournal();
-  const search = h('input.input', {
+  const search = notes.length > 0 && h('input.input', {
     type: 'search',
     placeholder: 'Suchen …',
     value: journalQuery,
@@ -393,23 +646,119 @@ function reviewTab(refresh) {
   }, f.short)));
   paintChips();
 
+  const hist = ln.FIELDS.map((f) => ({ f, list: ln.statusHistory(f.id) }));
+  const weeks = hist[0].list;
+
   return [
     h('section.card',
       secTitle('chart', 'Wochenziele'),
-      h('p.small.muted', 'Status deiner Ziele der letzten 8 Wochen.'),
-      ln.FIELDS.map((f) => h('div.srow',
-        h('span.sr-name', f.short),
-        h('div.sr-dots', ln.statusHistory(f.id).map((x) => h(`span.sdot2.st-${x.status || 'none'}`, { title: `KW ${isoWeek(x.monday)}: ${x.ziel ? `${x.ziel} – ${ln.STATUS[x.status]}` : 'kein Ziel'}` }))),
-      )),
-      h('div.slegend', h('span', h('span.sdot2.st-erreicht'), 'erreicht'), h('span', h('span.sdot2.st-teilweise'), 'teilweise'), h('span', h('span.sdot2.st-nicht'), 'nicht erreicht'), h('span', h('span.sdot2.st-offen'), 'offen')),
+      weeks.length
+        ? [
+          h('p.small.muted', weeks.length === 1 ? `Seit KW ${isoWeek(weeks[0].monday)}` : `KW ${isoWeek(weeks[0].monday)} bis KW ${isoWeek(weeks[weeks.length - 1].monday)}`),
+          hist.map(({ f, list }) => h('div.srow',
+            h('span.sr-name', f.short),
+            h('div.sr-dots', list.map((x) => h(`span.sdot2.st-${x.status || 'none'}`, { title: `KW ${isoWeek(x.monday)}: ${x.ziel ? `${x.ziel} – ${ln.STATUS[x.status]}` : 'kein Ziel'}` }))),
+          )),
+          h('div.slegend', h('span', h('span.sdot2.st-erreicht'), 'erreicht'), h('span', h('span.sdot2.st-teilweise'), 'teilweise'), h('span', h('span.sdot2.st-nicht'), 'nicht erreicht'), h('span', h('span.sdot2.st-offen'), 'läuft')),
+        ]
+        : h('p.muted', 'Noch keine Wochenziele. Nach deiner ersten Woche siehst du hier pro Feld, wie es gelaufen ist.'),
     ),
     h('section.card',
-      secTitle('pen', 'Lernjournal', h('span.count', units.filter((u) => u.notiz).length)),
+      secTitle('pen', 'Lernjournal', notes.length > 0 && h('span.count', notes.length)),
       search,
-      chips,
+      notes.length > 0 && chips,
       journalList,
     ),
   ];
+}
+
+// ---------- Lernplan importieren ----------
+
+function importView() {
+  const area = h('textarea.input.paste', { placeholder: 'Lernplan aus dem Claude-Chat hier einfügen …', rows: 6 });
+  const msg = h('p.error');
+  const preview = h('div');
+
+  function check() {
+    msg.textContent = '';
+    preview.replaceChildren();
+    pendingPlan = null;
+    if (!ln.isLernplan(area.value)) {
+      msg.textContent = area.value.trim()
+        ? 'Das ist kein Lernplan („typ": „lernplan" fehlt). Essens- und Trainingspläne importierst du unter Körper.'
+        : 'Bitte zuerst den Lernplan einfügen.';
+      return;
+    }
+    try {
+      pendingPlan = ln.parseLernplan(area.value);
+    } catch (e) {
+      msg.textContent = e.message;
+      return;
+    }
+    preview.replaceChildren(lernplanPreview(pendingPlan));
+  }
+
+  return h('div.view.a-leistung.lview',
+    h('a.backlink', { href: '#/leistung/woche' }, icon('back', 18), 'Leistung'),
+    h('header.hero', h('h1', 'Lernplan importieren')),
+    h('section.card',
+      h('p.muted', 'Kopiere den Code-Block aus deinem Claude-Chat und füge ihn hier ein.'),
+      area,
+      msg,
+      h('div.buttons',
+        h('button.btn.ghost', {
+          onclick: async () => {
+            try {
+              area.value = await navigator.clipboard.readText();
+              check();
+            } catch {
+              toast('Bitte lange ins Feld tippen und „Einsetzen“ wählen.');
+            }
+          },
+        }, 'Aus Zwischenablage'),
+        h('button.btn.primary', { onclick: check }, 'Prüfen'),
+      ),
+    ),
+    preview,
+    h('section.card',
+      h('p.label', 'Vorlage für deinen Claude-Chat'),
+      h('p.muted', 'Lege diesen Text in deinem Lern-Projekt als Anweisung ab. Dann kommt der Plan jeden Sonntag direkt im passenden Format.'),
+      h('button.btn.ghost.full', {
+        onclick: async () => {
+          try {
+            await navigator.clipboard.writeText(ln.TEMPLATE_LERNPLAN);
+            toast('Kopiert – jetzt im Claude-Chat einfügen');
+          } catch {
+            toast('Kopieren hat nicht geklappt', 'error');
+          }
+        },
+      }, 'Vorlage Lernplan kopieren'),
+    ),
+  );
+}
+
+function lernplanPreview(plan) {
+  const end = addDays(plan.monday, 6);
+  const replaces = Object.keys(plan.felder).some((f) => ln.goal(plan.monday, f));
+  return h('section.card',
+    h('p.label', `Lernplan · KW ${isoWeek(plan.monday)} · ${fmtShort(plan.monday)}–${fmtShort(end)}`),
+    h('div.preview',
+      ln.FIELDS.map((f) => {
+        const g = plan.felder[f.id];
+        return h('div.prow', h('b', f.short), h('span.muted', g ? `${g.ziel} · ${g.einheiten} Einheiten${g.schritte.length ? ` · ${g.schritte.length} Schritte` : ''}${plan.fokus === f.id ? ' · Fokus' : ''}` : 'nicht im Plan – bleibt wie es ist'));
+      }),
+      plan.termine.map((t) => h('div.prow', h('b', fmtShort(fromIso(t.datum))), h('span.muted', `${ln.terminTitle(t)} (${ln.fieldName(t.feld)})`))),
+    ),
+    replaces && h('p.small.muted', 'Für einige Felder gibt es schon ein Ziel – es wird ersetzt.'),
+    h('button.btn.primary.full', {
+      onclick: () => {
+        ln.applyLernplan(plan);
+        pendingPlan = null;
+        toast('Lernplan übernommen');
+        location.hash = '#/leistung/woche';
+      },
+    }, 'Übernehmen'),
+  );
 }
 
 // ---------- Wochen-Review Leistung ----------
@@ -464,7 +813,7 @@ function reviewView(refresh) {
   paintFk();
   const err = h('p.error');
 
-  return h('div.view.a-leistung.contact-view',
+  return h('div.view.a-leistung.lview',
     h('a.backlink', { href: '#/leistung/woche' }, icon('back', 18), 'Leistung'),
     h('header.hero', h('p.eyebrow', `Wochen-Review · KW ${isoWeek(mon)} → KW ${isoWeek(next)}`), h('h1', 'Lernziele')),
     h('p.muted.rv-intro', 'Bewerte kurz jedes Ziel und entscheide: übernehmen, neu setzen oder streichen. Jedes neue Ziel braucht ein klares „Fertig, wenn …“.'),

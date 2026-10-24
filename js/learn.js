@@ -4,7 +4,7 @@
 //   lfield:<montag>:<feld>   Wochenziel {ziel, fertig_wenn, einheiten, schritte:[{text, done}], status}
 //   lfokus:<montag>          Fokusfeld der Woche
 //   lunit:<datum>:<id>       Lerneinheit {feld, dauer (Min, optional), notiz}
-//   ltermin:<id>             Termin {titel, datum, feld}
+//   ltermin:<id>             Termin {titel, modul?, datum, feld, seit?}
 // status: offen | erreicht | teilweise | nicht
 
 import * as store from './store.js';
@@ -17,6 +17,8 @@ export const FIELDS = [
   { id: 'englisch', name: 'Englisch', short: 'Englisch' },
 ];
 export const fieldName = (id) => (FIELDS.find((f) => f.id === id) || { name: id }).name;
+export const fieldShort = (id) => (FIELDS.find((f) => f.id === id) || { short: id }).short;
+export const FIELD_ICON = { sap: 'gear', payroll: 'calc', uni: 'gradcap', englisch: 'chat' };
 
 // „SAP HCM Customizing“, „sap“, „Englisch“ … → Feld-ID
 export function normField(s) {
@@ -101,7 +103,36 @@ export function termine() {
 }
 
 export function saveTermin(id, data) {
-  store.set(`ltermin:${id || uid()}`, data);
+  const key = `ltermin:${id || uid()}`;
+  store.set(key, { seit: iso(), ...data });
+  return key.slice(8);
+}
+
+export const terminTitle = (t) => [t.titel, t.modul].filter(Boolean).join(' ');
+
+// Lerneinheiten des Feldes seit dem Eintragen des Termins
+export function unitsSince(feld, date) {
+  return allUnits().filter((u) => u.feld === feld && u.date >= date).length;
+}
+
+// Termine als Kalender-Datei (ganztägig, Erinnerung 7 Tage und 1 Tag vorher um 9 Uhr)
+export function termineIcs(list) {
+  const esc = (t) => String(t).replace(/\\/g, '\\\\').replace(/[,;]/g, (c) => `\\${c}`).replace(/\n/g, '\\n');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//4 Bereiche//Life App//DE', 'CALSCALE:GREGORIAN'];
+  for (const t of list) {
+    const title = terminTitle(t);
+    const d = t.datum.replace(/-/g, '');
+    const next = iso(addDays(fromIso(t.datum), 1)).replace(/-/g, '');
+    lines.push('BEGIN:VEVENT', `UID:termin-${t.id}@life4`, `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${d}`, `DTEND;VALUE=DATE:${next}`,
+      `SUMMARY:${esc(title)}`, `DESCRIPTION:${esc(`Lernfeld: ${fieldName(t.feld)}`)}`,
+      'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(title)}`, 'TRIGGER:-P6DT15H', 'END:VALARM',
+      'BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(title)}`, 'TRIGGER:-PT15H', 'END:VALARM',
+      'END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
 }
 
 export const deleteTermin = (id) => store.del(`ltermin:${id}`);
@@ -157,6 +188,34 @@ export function weekParts(monday) {
   return parts;
 }
 
+// Ist das Wochenziel erfüllt? (Einheiten geschafft und alle Teilschritte abgehakt)
+export function fulfilled(monday, f) {
+  const g = goal(monday, f);
+  if (!g) return true;
+  return unitsOfWeek(monday, f).length >= (g.einheiten || 0) && g.schritte.every((s) => s.done);
+}
+
+// Reihenfolge für „Heute dran“: Fokusfeld, solange sein Ziel offen ist –
+// sonst das Feld mit dem größten Rückstand gemessen an der verstrichenen Woche.
+export function todayOrder(monday, now = new Date()) {
+  const elapsed = (Math.floor((now - monday) / 86400000) + 1) / 7;
+  const fk = fokus(monday);
+  const open = FIELDS.filter((f) => goal(monday, f.id) && !fulfilled(monday, f.id))
+    .map((f) => {
+      const g = goal(monday, f.id);
+      const lag = (g.einheiten || 0) * Math.min(1, elapsed) - unitsOfWeek(monday, f.id).length;
+      return { id: f.id, lag: f.id === fk ? Infinity : lag };
+    })
+    .sort((a, b) => b.lag - a.lag);
+  return open.map((x) => x.id);
+}
+
+// Erste Woche, in der es überhaupt Lernziele gab
+export function firstGoalWeek() {
+  const keys = store.list('lfield:').map(({ key }) => key.split(':')[1]).sort();
+  return keys.length ? fromIso(keys[0]) : null;
+}
+
 // Vorschlag für den Status beim Review
 export function suggestStatus(monday, f) {
   const g = goal(monday, f);
@@ -171,7 +230,10 @@ export function suggestStatus(monday, f) {
 // Statusreihe der letzten Wochen (älteste zuerst)
 export function statusHistory(f, weeks = 8) {
   const cur = weekStart();
-  return Array.from({ length: weeks }, (_, i) => {
+  const first = firstGoalWeek();
+  if (!first) return [];
+  weeks = Math.min(weeks, Math.round((cur - weekStart(first)) / (7 * 86400000)) + 1);
+  return Array.from({ length: Math.max(0, weeks) }, (_, i) => {
     const m = addDays(cur, -7 * (weeks - 1 - i));
     const g = goal(m, f);
     return { monday: m, status: g ? g.status : null, ziel: g?.ziel };
@@ -183,6 +245,32 @@ export function statusHistory(f, weeks = 8) {
 // beim nächsten Blick in die App automatisch eine Einheit eingetragen.
 
 const TIMER_KEY = 'life4.timer';
+const TIMER_MIN_KEY = 'life4.timerMin';
+
+// Zuletzt gewählte Dauer (Standard 25 Minuten)
+export function timerMinutes() {
+  try {
+    return Number(localStorage.getItem(TIMER_MIN_KEY)) || 25;
+  } catch {
+    return 25;
+  }
+}
+
+export function setTimerMinutes(min) {
+  try {
+    localStorage.setItem(TIMER_MIN_KEY, String(min));
+  } catch { /* egal */ }
+}
+
+// Laufenden Timer verlängern (oder kürzen)
+export function extendTimer(delta) {
+  const t = timer();
+  if (!t) return;
+  const min = Math.max(1, t.min + delta);
+  try {
+    localStorage.setItem(TIMER_KEY, JSON.stringify({ ...t, min }));
+  } catch { /* egal */ }
+}
 
 export function timer() {
   try {
@@ -247,7 +335,7 @@ export function parseLernplan(text) {
     };
   }
   const termine = (j.termine || [])
-    .map((t) => ({ titel: String(t.titel || '').trim(), datum: String(t.datum || ''), feld: normField(t.feld) || 'uni' }))
+    .map((t) => ({ titel: String(t.titel || '').trim(), ...(t.modul ? { modul: String(t.modul).trim() } : {}), datum: String(t.datum || ''), feld: normField(t.feld) || 'uni' }))
     .filter((t) => t.titel && /^\d{4}-\d{2}-\d{2}$/.test(t.datum));
   if (!Object.keys(felder).length && !termine.length) throw new Error('Der Lernplan enthält keine Felder und keine Termine.');
   return { typ: 'lernplan', monday, felder, fokus: normField(j.fokus), termine };
@@ -269,7 +357,7 @@ Regeln:
 - Felder: "sap" (SAP Customizing), "payroll", "uni", "englisch". Nicht jedes Feld muss vorkommen.
 - Pro Feld: "ziel" (ein Satz), "fertig_wenn" (Pflicht: woran ich erkenne, dass es geschafft ist), "einheiten_pro_woche" (Zahl), "schritte" (kurze Liste).
 - "fokus" ist optional: das wichtigste Feld der Woche.
-- "termine" ist optional: Abgaben, Prüfungen, Lernziele mit "titel", "datum" (JJJJ-MM-TT), "feld".
+- "termine" ist optional: Abgaben, Prüfungen, Lernziele mit "titel", "modul" (optional), "datum" (JJJJ-MM-TT), "feld".
 - Keine Kommentare im Code-Block.
 
 \`\`\`json
@@ -292,7 +380,7 @@ Regeln:
     }
   },
   "termine": [
-    { "titel": "Klausur Personalwirtschaft", "datum": "2026-11-12", "feld": "uni" }
+    { "titel": "Klausur", "modul": "Personalwirtschaft", "datum": "2026-11-12", "feld": "uni" }
   ]
 }
 \`\`\``;
