@@ -1067,3 +1067,73 @@ button.ring-title .chev { color: var(--muted); }
 .ring-sub { font-size: 10px; white-space: nowrap; letter-spacing: -.01em; }
 .ring-text .ring-sub { font-size: 10.5px; white-space: nowrap; opacity: .85; }
 .ring-text .ring-unit { font-size: 11.5px; }
+
+/* ---------- Körper v3: Wasser, Erledigt-Gruppen, neue Zeilen ---------- */
+
+:root { --water: #3fa3e3; --water-soft: #e4f2fc; }
+@media (prefers-color-scheme: dark) { :root { --water: #5db6f0; --water-soft: #173447; } }
+
+/* Wasser */
+.kbox.water .sec-icon { background: var(--water-soft); color: var(--water); }
+.kbox.water .water-bar { background: var(--water-soft); }
+.kbox.water .water-bar i { background: var(--water); }
+.kbox-info .wreached { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; color: var(--ok); font-weight: 650; }
+.glasses { display: flex; flex-wrap: wrap; gap: 6px; }
+.glass { width: 44px; height: 54px; display: grid; place-items: center; border: 0; background: none; padding: 0; cursor: pointer; border-radius: 12px; }
+.glass:active { transform: scale(.92); }
+.glass svg { width: 34px; height: 42px; overflow: visible; }
+.glass .wglass { fill: none; stroke: color-mix(in srgb, var(--water) 45%, var(--line)); stroke-width: 1.8; stroke-linejoin: round; }
+.glass .wfill { fill: var(--water); opacity: .85; transform: translateY(100%); transition: transform .35s ease; }
+.glass.full .wfill { transform: translateY(12%); }
+.glass.full .wglass { stroke: var(--water); }
+.glass.extra .wglass { stroke-dasharray: 3 2.5; }
+.glass.plus { border: 1.8px dashed color-mix(in srgb, var(--water) 45%, var(--line)); width: 36px; height: 44px; margin: 5px 4px; color: var(--water); border-radius: 8px 8px 10px 10px; }
+
+/* Verschachtelte Gruppen: Regeln nur für die direkte Ebene */
+.kbox.open .dgroup:not(.open) > .kbox-body { grid-template-rows: 0fr; }
+.kbox.open .dgroup:not(.open) .kbox-chev { transform: rotate(-90deg); }
+.kbox.open .dgroup.open .kbox-chev { transform: rotate(90deg); }
+.kbox.open .kbox-inner.dg-inner, .kbox .kbox-inner.dg-inner { padding: 0; }
+.dgroup.open > .kbox-body { grid-template-rows: 1fr; }
+.dgroup .dg-inner { padding-top: 0; }
+.dgroup.open .dg-inner { padding-top: 8px; }
+.dg-head { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 8px 2px; border: 0; border-top: 1px solid var(--line); background: none; font: inherit; font-size: 13.5px; font-weight: 650; color: var(--muted); cursor: pointer; }
+
+/* Offene Mahlzeit: [Tag] Name ……… Uhrzeit, darunter Menge · kcal · Chips */
+.mi-top { display: flex; align-items: center; gap: 8px; }
+.mi-top .cat { flex: none; }
+.mi-name { flex: 1; min-width: 0; font-weight: 650; line-height: 1.3; }
+.mi-time { flex: none; font-variant-numeric: tabular-nums; font-size: 13.5px; font-weight: 650; color: var(--muted); }
+.mi.next .mi-time { color: var(--c); }
+.mi-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 6px; }
+.mi-menge { font-size: 13px; color: var(--muted); }
+.mi-macros { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.mi .st-ic { margin-top: 0; }
+.mi { align-items: center; }
+
+/* Erledigt/ausgelassen: ✓ · Uhrzeit · Name ……… [Tags] */
+.cline .st-ic, .cline .cl-time, .cline .cl-name, .cline .cl-kcal { opacity: .72; }
+.cline .st-ic { width: 22px; height: 22px; flex: none; }
+.cline.skipped .st-ic { background: var(--line); border-color: var(--line); color: var(--muted); }
+.cl-tags { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.cl-kcal { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.cline .cat, .cline .badge-skip { font-size: 11px; }
+
+/* Verschieben beim Abhaken / Rückgängig */
+@keyframes leaveDown { to { opacity: 0; transform: translateY(16px) scale(.98); } }
+@keyframes leaveUp { to { opacity: 0; transform: translateY(-16px) scale(.98); } }
+@keyframes enterRow { from { opacity: 0; transform: translateY(-6px); } }
+.leave-down { animation: leaveDown .25s ease forwards; pointer-events: none; }
+.leave-up { animation: leaveUp .25s ease forwards; pointer-events: none; }
+.enter-row { animation: enterRow .3s ease; }
+
+/* Training: Heute / Morgen */
+.tr-head { font-size: 18px; }
+.tr-head.tomorrow { color: var(--c); }
+.tag.art { background: var(--bg); color: var(--muted); }
+.import-hint { display: flex; align-items: center; gap: 8px; margin: 2px 16px 14px; padding: 10px 12px; border-radius: 12px; background: var(--c-soft); color: var(--c); font-weight: 650; font-size: 14px; }
+.cline { gap: 8px; padding: 9px 12px; }
+.cline .cl-time { width: 36px; font-size: 12.5px; }
+.cline .cat, .cline .badge-skip { font-size: 10.5px; padding: 2px 6px; letter-spacing: 0; }
+.cl-tags { gap: 4px; }
+.cline .cl-name { min-width: 64px; }

@@ -12,6 +12,8 @@
 //   rskip:<datum>:<id>      Routine ausgelassen
 //   tskip:<datum>:<nr>      Training ausgelassen
 //   weight:<datum>          Morgengewicht in kg
+//   water:<datum>           getrunkene Menge in ml
+//   settings.body.water     {goal: Liter, glass: Liter}
 
 import * as store from './store.js';
 import { iso, fromIso, addDays, weekStart, uid, pastDays } from './ui.js';
@@ -162,6 +164,16 @@ export function trainingChoices() {
   return [...TRAINING_TYPES.map((t) => ({ id: t.id, name: t.name })), ...[...custom].slice(0, 8).map((n) => ({ id: n, name: n }))];
 }
 
+// Anzeigename einer Einheit: Titel (z. B. „Oberkörper A“), sonst die Art.
+export const unitName = (t) => t.titel || trainingName(t.art);
+export const isRest = (t) => normArt(t.art) === 'ruhetag';
+
+// Wichtigste Einheit des Tages: Studio, sonst die erste (ohne Ruhetag).
+export function mainUnit(list) {
+  const active = list.filter((t) => !isRest(t));
+  return active.find((t) => normArt(t.art) === 'studio') || active[0] || null;
+}
+
 export function training(date) {
   return store.get(`training:${date}`, []);
 }
@@ -201,12 +213,33 @@ const DEFAULT_ROUTINES = [
   { id: 'vitamine', name: 'Vitamine', zeit: '08:00' },
   { id: 'kreatin', name: 'Kreatin', zeit: '08:00' },
   { id: 'proteinshake', name: 'Proteinshake', zeit: '16:00' },
-  { id: 'wasser', name: 'Wasser: 3 Liter geschafft', zeit: '21:00' },
   { id: 'skin-abends', name: 'Skin Care abends', zeit: '22:00' },
 ];
 
 export function seedDefaults() {
   for (const r of DEFAULT_ROUTINES) store.setDefault(`routine:${r.id}`, { name: r.name, zeit: r.zeit });
+  // Die frühere Routine „Wasser“ wird durch die Wasser-Box ersetzt.
+  if (store.get('routine:wasser')) store.del('routine:wasser');
+}
+
+// ---------- Wasser ----------
+
+export const WATER_DEFAULTS = { goal: 3.0, glass: 0.5 };
+export const GLASS_SIZES = [0.25, 0.5, 1.0];
+
+export function waterSettings() {
+  return { ...WATER_DEFAULTS, ...store.get('settings.body.water', {}) };
+}
+
+export function setWaterSettings(w) {
+  store.set('settings.body.water', w);
+}
+
+export const water = (date) => store.get(`water:${date}`, 0); // ml
+
+export function setWater(date, ml) {
+  if (ml > 0) store.set(`water:${date}`, Math.round(ml));
+  else store.del(`water:${date}`);
 }
 
 export function routines() {
@@ -292,8 +325,12 @@ export function weekParts(monday) {
   const m = { label: 'Mahlzeiten', done: 0, total: 0 };
   const r = { label: 'Routinen', done: 0, total: 0 };
   const t = { label: 'Training', done: 0, total: 0 };
+  const w = { label: 'Wasser', done: 0, total: 0 };
   const rs = routines();
+  const goalMl = waterSettings().goal * 1000;
   for (const d of pastDays(monday)) {
+    w.total++;
+    if (water(d) >= goalMl) w.done++;
     meals(d).forEach((_, i) => {
       m.total++;
       if (mealStatus(d, i) === 'ja') m.done++;
@@ -308,7 +345,7 @@ export function weekParts(monday) {
       if (trainingDone(d, i)) t.done++;
     });
   }
-  return [m, r, t];
+  return [m, r, t, w];
 }
 
 // Zahlen für den Wochenexport.
@@ -333,7 +370,7 @@ export function weekSummary(monday) {
     for (const e of ex) extrasList.push(`${e.name} (${e.kcal} kcal)`);
     training(d).forEach((t, i) => {
       if (normArt(t.art) === 'ruhetag') return;
-      trainings.push({ name: trainingName(t.art) + (t.details ? ` (${t.details})` : ''), done: trainingDone(d, i), day: d });
+      trainings.push({ name: unitName(t) + (t.details ? ` (${t.details})` : ''), done: trainingDone(d, i), day: d });
     });
   }
   for (let i = 0; i < 7; i++) {
@@ -341,8 +378,10 @@ export function weekSummary(monday) {
     const w = weight(d);
     if (w) weightsList.push({ date: d, v: w });
   }
+  const wd = days.map(water).filter((x) => x > 0);
   return {
     parts: weekParts(monday),
+    waterAvg: wd.length ? wd.reduce((a, b) => a + b, 0) / wd.length / 1000 : null,
     skipped,
     avgKcal: foodDays ? sum.kcal / foodDays : null,
     avgProtein: foodDays ? sum.protein / foodDays : null,
@@ -391,7 +430,12 @@ function normTraining(v) {
   const list = Array.isArray(v) ? v : [v];
   return list.filter(Boolean).map((t) => (typeof t === 'string'
     ? { art: normArt(t), details: '' }
-    : { art: normArt(t.art || t.typ || t.name), details: String(t.details || t.inhalt || t.beschreibung || ''), ...(t.zeit ? { zeit: String(t.zeit).slice(0, 5) } : {}) }));
+    : {
+      art: normArt(t.art || t.typ || t.name),
+      details: String(t.details || t.inhalt || t.beschreibung || ''),
+      ...(t.titel || t.title ? { titel: String(t.titel || t.title) } : {}),
+      ...(t.zeit ? { zeit: String(t.zeit).slice(0, 5) } : {}),
+    }));
 }
 
 // Liest den eingefügten Text (darf drumherum Text oder ```json enthalten).
@@ -478,6 +522,7 @@ Regeln:
 - "woche_ab" ist der Montag der Woche im Format JJJJ-MM-TT.
 - Tage: "Mo", "Di", "Mi", "Do", "Fr", "Sa", "So" (zusammenfassen erlaubt, z. B. "Sa,So").
 - "art": Studio, Spinning, Sauna, Infrarot oder Ruhetag – andere Trainings einfach mit ihrem Namen (z. B. Schwimmen, Laufen, Boxen).
+- "titel" ist optional: der Name der Einheit bzw. des Splits (z. B. "Push", "Oberkörper A").
 - "zeit" (HH:MM) ist optional.
 - "details" ist eine kurze Beschreibung (z. B. Muskelgruppen, Dauer).
 - Mehrere Einheiten an einem Tag als Liste.
@@ -488,7 +533,7 @@ Regeln:
   "typ": "trainingsplan",
   "woche_ab": "2026-10-26",
   "tage": {
-    "Mo": [ { "art": "Studio", "details": "Push: Brust, Schultern, Trizeps" }, { "art": "Sauna", "details": "2 Gänge" } ],
+    "Mo": [ { "art": "Studio", "titel": "Oberkörper A", "details": "Bankdrücken, Rudern, Schulterdrücken" }, { "art": "Sauna", "details": "2 Gänge" } ],
     "Di": [ { "art": "Spinning", "details": "45 Min", "zeit": "18:00" } ],
     "Do": [ { "art": "Schwimmen", "details": "30 Min locker" } ],
     "Mi": [ { "art": "Ruhetag", "details": "" } ]

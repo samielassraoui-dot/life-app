@@ -115,6 +115,7 @@ function koerperLines(monday) {
   if (s.extras.length) lines.push(`- Spontan gegessen: ${s.extras.join(', ')}`);
   if (r.total) lines.push(`- Routinen: ${r.done}/${r.total}${pctOf(r)}`);
   if (tr.total) lines.push(`- Training: ${tr.done}/${tr.total} erledigt – ${s.trainings.map((x) => `${WD_SHORT[fromIso(x.day).getDay()]} ${x.name}${x.done ? ' ✓' : ' ✗'}`).join(', ')}`);
+  if (s.waterAvg) lines.push(`- Wasser: Ø ${de(s.waterAvg, 1)} L pro Tag (Ziel ${de(body.waterSettings().goal, 1)} L)`);
   if (s.weightAvg) {
     const diff = s.weightPrev ? s.weightAvg - s.weightPrev : null;
     lines.push(`- Gewicht: Ø ${de(s.weightAvg, 1)} kg${diff != null ? ` (Vorwoche ${de(s.weightPrev, 1)} kg, ${diff >= 0 ? '+' : '–'}${de(Math.abs(diff), 1)})` : ''} · ${s.weights.map((w) => `${WD_SHORT[fromIso(w.date).getDay()]} ${de(w.v, 1)}`).join(', ')}`);
