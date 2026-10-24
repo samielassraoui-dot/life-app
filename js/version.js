@@ -1,1 +1,1 @@
-export const VERSION = '1.11.0 · Körper v4';
+export const VERSION = '1.12.0 · Körper v5';

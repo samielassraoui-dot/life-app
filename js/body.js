@@ -14,7 +14,6 @@
 //   weight:<datum>          Morgengewicht in kg
 //   water:<datum>           getrunkene Menge in ml
 //   settings.body.water     {goal: Liter, glass: Liter}
-//   recipes:<montag>        Meal-Prep-Rezepte der Woche [{name, prep_tag, portionen, haltbarkeit, zutaten:[{name, gramm}]}]
 //   measure:<datum>         Umfänge in cm {taille, brust, arme}
 
 import * as store from './store.js';
@@ -354,10 +353,6 @@ export function setMeasure(date, data) {
   else store.del(`measure:${date}`);
 }
 
-// ---------- Meal Prep ----------
-
-export const recipes = (monday) => store.get(`recipes:${iso(monday)}`, []);
-
 // ---------- Fortschritt ----------
 
 // Erledigt / geplant pro Bestandteil – Grundlage für die automatische Zielerreichung.
@@ -413,6 +408,41 @@ export function consistency(monday) {
     if (w || weight(d) || extras(d).length) any = true;
   }
   return { days: days.length, mDone, mTotal, tDone, tTotal, wDays, hasData: any || mTotal > 0 || tTotal > 0 };
+}
+
+// Wochenbilanz: Plan gegen Ist bis einschließlich heute.
+// Tag im Ziel: kcal innerhalb ±10 % des Tagesziels und Protein mindestens 90 %.
+// Abgeschlossene Tage zählen immer, heute nur, wenn das Ziel schon erreicht ist.
+export function weekBalance(monday) {
+  const t = targets();
+  const today = iso();
+  const plan = { kcal: 0, protein: 0 };
+  const ist = { kcal: 0, protein: 0 };
+  let skipped = 0;
+  let inGoal = 0;
+  let goalDays = 0;
+  const spontan = [];
+  for (const d of pastDays(monday)) {
+    const { eaten, planned } = totals(d);
+    plan.kcal += planned.kcal;
+    plan.protein += planned.protein;
+    ist.kcal += eaten.kcal;
+    ist.protein += eaten.protein;
+    meals(d).forEach((_, i) => { if (mealStatus(d, i) === 'nein') skipped++; });
+    for (const e of extras(d)) spontan.push({ ...e, date: d });
+    const ok = Math.abs(eaten.kcal - t.kcal) <= t.kcal * 0.1 && eaten.protein >= t.protein * 0.9;
+    if (d < today || ok) goalDays++;
+    if (ok) inGoal++;
+  }
+  return {
+    plan,
+    ist,
+    skipped,
+    inGoal,
+    goalDays,
+    spontan,
+    spontanKcal: spontan.reduce((s, e) => s + (Number(e.kcal) || 0), 0),
+  };
 }
 
 // Zahlen für den Wochenexport.
@@ -522,19 +552,6 @@ export function parsePlan(text) {
     const now = new Date();
     return now.getDay() === 0 ? addDays(weekStart(now), 7) : weekStart(now);
   };
-  if (typText.includes('rezept') || (!j.tage && Array.isArray(j.rezepte))) {
-    const list = (j.rezepte || []).filter(Boolean).map((r) => ({
-      name: String(r.name || 'Rezept'),
-      prep_tag: String(r.prep_tag || r.prep || ''),
-      portionen: num(r.portionen),
-      haltbarkeit: num(r.haltbarkeit_tage ?? r.haltbarkeit),
-      zutaten: (r.zutaten || []).filter(Boolean).map((z) => (typeof z === 'string'
-        ? { name: z, gramm: 0 }
-        : { name: String(z.name || ''), gramm: num(z.gramm ?? z.menge) })).filter((z) => z.name),
-    }));
-    if (!list.length) throw new Error('Keine Rezepte gefunden.');
-    return { typ: 'rezepte', monday: mondayOf(), rezepte: list };
-  }
   const tage = j.tage || j.days;
   if (!tage || typeof tage !== 'object') throw new Error('Im Plan fehlt der Abschnitt "tage".');
 
@@ -560,10 +577,6 @@ export function parsePlan(text) {
 }
 
 export function applyPlan(plan) {
-  if (plan.typ === 'rezepte') {
-    store.set(`recipes:${iso(plan.monday)}`, plan.rezepte);
-    return;
-  }
   plan.days.forEach((items, i) => {
     if (items === undefined) return;
     const d = iso(addDays(plan.monday, i));
@@ -622,33 +635,6 @@ Regeln:
     "Do": [ { "art": "Schwimmen", "details": "30 Min locker" } ],
     "Mi": [ { "art": "Ruhetag", "details": "" } ]
   }
-}
-\`\`\``;
-
-export const TEMPLATE_RECIPES = `Bitte gib mir die Meal-Prep-Rezepte für die kommende Woche zusätzlich als JSON-Code-Block, damit ich sie in meine App importieren kann.
-
-Regeln:
-- "typ" ist immer "rezepte", "woche_ab" ist der Montag der Woche (JJJJ-MM-TT).
-- Pro Rezept: "name", "prep_tag" (Mo–So), "portionen" (Zahl), "haltbarkeit_tage" (Zahl), "zutaten" mit "name" und "gramm" (ganze Zahl, Gesamtmenge für alle Portionen).
-- Keine Kommentare im Code-Block.
-
-\`\`\`json
-{
-  "typ": "rezepte",
-  "woche_ab": "2026-11-02",
-  "rezepte": [
-    {
-      "name": "Hähnchen, Reis, Brokkoli",
-      "prep_tag": "So",
-      "portionen": 4,
-      "haltbarkeit_tage": 4,
-      "zutaten": [
-        { "name": "Hähnchenbrust", "gramm": 800 },
-        { "name": "Basmatireis (roh)", "gramm": 400 },
-        { "name": "Brokkoli", "gramm": 600 }
-      ]
-    }
-  ]
 }
 \`\`\``;
 

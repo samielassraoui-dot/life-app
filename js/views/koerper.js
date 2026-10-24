@@ -1,7 +1,7 @@
 // Bereich Körper – drei Reiter:
 //   Heute      Kopfkarte, Trainings-Banner, Wasser, Mahlzeiten, Training, Routinen, Gewicht
-//   Woche      Tagesübersicht, Meal Prep, Spontan-Einträge
-//   Rückblick  Gewicht, Umfänge, Fotos, Konsistenz
+//   Wochenplan Tagesübersicht, Wochenbilanz (Plan gegen Ist)
+//   Rückblick  Gewicht, Fotos, Konsistenz
 // Dazu: Wochenplan-Import und Ziele.
 import * as body from '../body.js';
 import * as photos from '../photos.js';
@@ -10,7 +10,7 @@ import { h, icon, toast, iso, fromIso, addDays, weekStart, fmtLong, fmtShort, WD
 
 const TABS = [
   { id: 'heute', name: 'Heute' },
-  { id: 'woche', name: 'Woche' },
+  { id: 'woche', name: 'Wochenplan' },
   { id: 'rueckblick', name: 'Rückblick' },
 ];
 
@@ -21,7 +21,6 @@ let editTraining = false;
 let showExtra = false;
 let showTraining = false;
 let weekOffset = 0;        // Reiter Woche: 0 = diese Woche
-let rangeWeeks = 8;        // Reiter Rückblick: Gewichtschart
 let pendingPlan = null;
 let entering = null;       // zuletzt verschobener Eintrag – bekommt eine Einblend-Animation
 let lastBanner = null;     // für die Wechsel-Animation des Trainings-Banners
@@ -57,7 +56,7 @@ function secTitle(ic, text, right) {
 
 // ---------- Aufklappbare Boxen ----------
 // Standard: offen, solange es offene Einträge gibt. Manuell gewählter Zustand wird
-// pro Box und Tag gemerkt (nur auf diesem Gerät).
+// pro Box und Tag gemerkt (nur auf diesem Gerät); IDs mit „g:“ gelten tagesunabhängig.
 
 const OPEN_KEY = 'life4.koerperOpen';
 
@@ -72,14 +71,14 @@ function openMap() {
 function rememberOpen(id, val) {
   try {
     const m = openMap();
-    m[`${id}:${day}`] = val;
+    m[id.startsWith('g:') ? id : `${id}:${day}`] = val;
     const keys = Object.keys(m);
     for (const k of keys.slice(0, Math.max(0, keys.length - 120))) delete m[k];
     localStorage.setItem(OPEN_KEY, JSON.stringify(m));
   } catch { /* egal */ }
 }
 
-const isOpen = (id, auto) => openMap()[`${id}:${day}`] ?? auto;
+const isOpen = (id, auto) => openMap()[id.startsWith('g:') ? id : `${id}:${day}`] ?? auto;
 
 // Auf-/Zuklappen ohne Neuzeichnen (Animation 200 ms über CSS)
 function collapsible(id, auto, head, content, cls = '') {
@@ -172,9 +171,9 @@ function todayTab(refresh) {
     hero(refresh),
     trainingBanner(),
     waterBox(),
+    routinesBox(refresh),
     mealsBox(refresh),
     trainingBox(refresh),
-    routinesBox(refresh),
     weightBox(refresh),
   ];
 }
@@ -655,120 +654,102 @@ function weekTab(refresh) {
       h('span.wd-sum', has
         ? [ms.length || ex.length ? `${n(planned.kcal)} kcal · ${n(planned.protein)} P` : null, tTitle].filter(Boolean).join(' · ')
         : 'Kein Plan'),
-      has ? h('span.kbox-chev', icon('back', 16)) : h('span'),
+      has ? h('span.kd-chev', icon('back', 16)) : h('span'),
     );
-    const content = h('div.kbox-body', h('div.kbox-inner.wd-inner',
+    const content = h('div.kd-body', h('div.kd-inner.wd-inner',
       [...ms].sort(byTime).map((m) => h('div.wd-line', h('span.cl-time', m.zeit || '–'), h('span.cl-name', m.name), h('span.wd-k', `${n(m.kcal)} kcal`), catTag(body.category(m)))),
       ex.map((e) => h('div.wd-line', h('span.cl-time', e.zeit || '–'), h('span.cl-name', e.name), h('span.wd-k', `${n(e.kcal)} kcal`), catTag('spontan'))),
       tl.map((t) => h('div.wd-line.tr', h('span.cl-time', t.zeit || '–'), h('span.cl-name', h('b', body.isRest(t) ? 'Ruhetag' : body.unitName(t)), t.details && h('span.small.muted.block', t.details)))),
     ));
-    const row = h(`div.kday${d === today ? '.today' : ''}${has ? '' : '.empty'}`, head, has ? content : null);
-    if (has) {
-      head.addEventListener('click', () => row.classList.toggle('open'));
-    }
-    return row;
+    if (!has) return h(`div.kday${d === today ? '.today' : ''}.empty`, head);
+    return collapsible(`g:wd-${d}`, false, head, content, `div.kday${d === today ? '.today' : ''}`);
   });
 
-  // Meal Prep
-  const rs = body.recipes(monday);
-  const recipeCards = rs.map((r) => {
-    const head = h('button.wd-head.rc-head',
-      h('span.rc-name', h('b', r.name), h('span.small.muted.block', [r.prep_tag && `Prep ${r.prep_tag}`, r.portionen && `${r.portionen} Portionen`, r.haltbarkeit && `${r.haltbarkeit} Tage haltbar`].filter(Boolean).join(' · '))),
-      h('span.kbox-chev', icon('back', 16)),
-    );
-    const row = h('div.kday.recipe', head, h('div.kbox-body', h('div.kbox-inner.wd-inner',
-      r.zutaten.map((z) => h('div.wd-line', h('span.cl-name', z.name), h('span.wd-k', z.gramm ? `${n(z.gramm)} g` : ''))),
-    )));
-    head.addEventListener('click', () => row.classList.toggle('open'));
-    return row;
-  });
-
-  // Spontan-Einträge
-  const spont = days.flatMap((d) => body.extras(d).map((e) => ({ ...e, d })));
-  const sum = spont.reduce((s, e) => ({ kcal: s.kcal + (e.kcal || 0), protein: s.protein + (e.protein || 0) }), { kcal: 0, protein: 0 });
+  const withPlan = days.filter((d) => body.meals(d).length || body.training(d).length).length;
+  const trainings = days.filter((d) => body.mainUnit(body.training(d))).length;
+  const wb = body.weekBalance(monday);
+  const pctKcal = wb.plan.kcal ? (wb.ist.kcal / wb.plan.kcal) * 100 : null;
+  const row2 = (label, a, b) => h('div.wb-row', h('span', label), h('span', h('b', a), b ? ` / ${b}` : ''));
 
   return [
     nav,
-    h('section.card', secTitle('calendar', 'Tage'), h('div.kdays', dayRows)),
-    h('section.card',
-      secTitle('meal', 'Meal Prep'),
-      rs.length ? h('div.kdays', recipeCards) : [h('p.muted', 'Keine Rezepte'), h('a.btn.soft.full', { href: '#/koerper/import' }, icon('upload', 18), 'Rezepte importieren')],
+    kbox('g:wochenplan', 'calendar', 'Wochenplan', {
+      info: withPlan ? `${withPlan}/7 Tage mit Plan · ${trainings} ${trainings === 1 ? 'Training' : 'Trainings'}` : 'Kein Plan',
+      pct: (withPlan / 7) * 100,
+      autoOpen: true,
+    },
+    h('div.kdays', dayRows),
+    !withPlan && importBtn(),
     ),
-    h('section.card',
-      secTitle('plus', 'Spontan', spont.length > 0 && h('span.count', spont.length)),
-      spont.length
-        ? [
-          h('div.klist', spont.map((e) => h('div.wd-line',
-            h('span.cl-time', WD_SHORT[fromIso(e.d).getDay()]),
-            h('span.cl-name', e.name, warnIcon(e)),
-            h('span.wd-k', `${n(e.kcal || 0)} kcal · ${n(e.protein || 0)} P`),
-          ))),
-          h('div.wd-total', h('span', 'Summe'), h('b', `${n(sum.kcal)} kcal · ${n(sum.protein)} g Protein`)),
-        ]
-        : h('p.muted', 'Keine Einträge'),
+    kbox('g:bilanz', 'chart', 'Wochenbilanz', {
+      info: wb.plan.kcal || wb.ist.kcal
+        ? `${n(wb.ist.kcal)} / ${n(wb.plan.kcal)} kcal · ${wb.inGoal}/${wb.goalDays} Tage im Ziel`
+        : 'Keine Daten',
+      pct: pctKcal,
+      autoOpen: false,
+    },
+    h('div.wb',
+      h('div.wb-head', h('span'), h('span', 'Ist / Plan')),
+      row2('kcal', n(wb.ist.kcal), n(wb.plan.kcal)),
+      row2('Protein (g)', n(wb.ist.protein), n(wb.plan.protein)),
+      row2('Tage im Ziel', String(wb.inGoal), String(wb.goalDays)),
+      row2('Ausgelassene Mahlzeiten', String(wb.skipped)),
+      row2('Spontan-Einträge', `${wb.spontan.length}`, null),
+      wb.spontan.length > 0 && row2('Spontan kcal', n(wb.spontanKcal)),
+    ),
+    wb.spontan.length > 0 && h('div.klist.wb-list', wb.spontan.map((e) => h('div.wd-line',
+      h('span.cl-time', WD_SHORT[fromIso(e.date).getDay()]),
+      h('span.cl-name', e.name, warnIcon(e)),
+      h('span.wd-k', `${n(e.kcal || 0)} kcal · ${n(e.protein || 0)} P`),
+    ))),
     ),
   ];
 }
 
 // ---------- Reiter Rückblick ----------
 
-function reviewTab(refresh) {
-  const seg = (w) => h(`button.seg${rangeWeeks === w ? '.on' : ''}`, { onclick: () => { rangeWeeks = w; refresh(); } }, `${w} Wochen`);
+function weightWeeks() {
+  try {
+    return Math.min(52, Math.max(2, Number(localStorage.getItem('life4.weightWeeks')) || 8));
+  } catch {
+    return 8;
+  }
+}
+
+function reviewTab() {
   return [
-    h('section.card',
-      secTitle('scale', 'Gewicht'),
-      h('div.segs', seg(4), seg(8), seg(26)),
-      lineChart(body.weights(), { weeks: rangeWeeks, dataWeeksOnly: true }),
-    ),
-    measuresCard(refresh),
+    weightCard(),
     photosCard(),
     consistencyCard(),
   ];
 }
 
-function measuresCard(refresh) {
-  const list = body.measures();
-  const today = iso();
-  const cur = list.find((m) => m.date === today) || {};
-  const date = h('input.input', { type: 'date', value: today, max: today });
-  const fields = body.MEASURES.map((m) => ({ m, el: h('input.input', { inputmode: 'decimal', value: cur[m.id] ? kg(cur[m.id]) : '' }) }));
-  date.addEventListener('change', () => {
-    const e = list.find((x) => x.date === date.value) || {};
-    for (const { m, el } of fields) el.value = e[m.id] ? kg(e[m.id]) : '';
+// Gewicht mit frei wählbarem Zeitraum (2–52 Wochen)
+function weightCard() {
+  let weeks = weightWeeks();
+  const label = h('b.wr-val');
+  const chart = h('div');
+  const slider = h('input.wrange', { type: 'range', min: 2, max: 52, step: 1, value: weeks, 'aria-label': 'Wochen' });
+  const paint = () => {
+    label.textContent = `${weeks} Wochen`;
+    chart.replaceChildren(lineChart(body.weights(), { weeks, dataWeeksOnly: true }));
+  };
+  slider.addEventListener('input', () => {
+    weeks = Number(slider.value);
+    label.textContent = `${weeks} Wochen`;
   });
-  const fmtCm = (v) => (v ? kg(v) : '–');
-
-  return h('section.card',
-    secTitle('chart', 'Umfänge'),
-    h('label.field', h('span', 'Datum'), date),
-    h('div.grid3', fields.map(({ m, el }) => h('label.field', h('span', `${m.name} (cm)`), el))),
-    h('button.btn.primary.full', {
-      onclick: () => {
-        const data = {};
-        for (const { m, el } of fields) data[m.id] = Math.round(parseNum(el.value) * 10) / 10;
-        body.setMeasure(date.value || today, data);
-        toast('Umfänge gespeichert');
-        refresh();
-      },
-    }, 'Speichern'),
-    list.length > 0 && h('div.mtable',
-      h('div.mrow.mhead', h('span', 'Datum'), body.MEASURES.map((m) => h('span', m.name))),
-      [...list].reverse().slice(0, 8).map((e) => swipeLeft(h('div.mrow', h('span', fmtShort(fromIso(e.date))), body.MEASURES.map((m) => h('span', fmtCm(e[m.id])))), {
-        label: 'Löschen',
-        onSwipe: () => {
-          const { date: d, ...data } = e;
-          body.setMeasure(d, {});
-          refresh();
-          toast('Eintrag gelöscht', '', { label: 'Rückgängig', fn: () => { body.setMeasure(d, data); refresh(); } });
-        },
-      })),
-      list.length > 1 && h('div.mrow.mdiff', h('span', 'Δ'), body.MEASURES.map((m) => {
-        const a = list.find((x) => x[m.id])?.[m.id];
-        const b = [...list].reverse().find((x) => x[m.id])?.[m.id];
-        const dlt = a && b ? b - a : null;
-        return h('span', dlt == null ? '–' : `${dlt > 0 ? '+' : dlt < 0 ? '–' : '±'}${kg(Math.abs(dlt))}`);
-      })),
-    ),
+  slider.addEventListener('change', () => {
+    try {
+      localStorage.setItem('life4.weightWeeks', String(weeks));
+    } catch { /* egal */ }
+    paint();
+  });
+  paint();
+  const w = body.weekAvg(weekStart());
+  return kbox('g:gewicht', 'scale', 'Gewicht', { info: w ? `Ø KW ${isoWeek(weekStart())}: ${kg(w)} kg` : 'Keine Daten', autoOpen: true },
+    h('div.wrange-row', h('span.small.muted', 'Zeitraum'), label),
+    slider,
+    chart,
   );
 }
 
@@ -799,12 +780,16 @@ function photosCard() {
     paint();
   });
   paint();
-  return h('section.card',
-    secTitle('lock', 'Fotos'),
+  const box = kbox('g:fotos', 'lock', 'Fotos', { info: ' ', autoOpen: false },
     h('div.prow2', h('label.field', h('span', 'Datum'), date), h('button.btn.soft', { onclick: () => file.click() }, icon('plus', 18), 'Foto')),
     file,
     grid,
   );
+  photos.listPhotos().then((list) => {
+    const info = box.querySelector('.kbox-info');
+    if (info) info.textContent = list.length ? `${list.length} ${list.length === 1 ? 'Foto' : 'Fotos'} · zuletzt ${fmtShort(fromIso(list[0].date))}` : 'Keine Fotos';
+  });
+  return box;
 }
 
 function openPhoto(p, url, repaint) {
@@ -833,9 +818,13 @@ function consistencyCard() {
     if (c.hasData) rows.push({ m, c });
   }
   const pct = (a, b) => (b ? `${Math.round((a / b) * 100)} %` : '–');
-  return h('section.card',
-    secTitle('check', 'Konsistenz'),
-    rows.length
+  const now = rows[0]?.m.getTime() === cur.getTime() ? rows[0].c : null;
+  return kbox('g:konsistenz', 'check', 'Konsistenz', {
+    info: now ? `KW ${isoWeek(cur)} · Mahlzeiten ${pct(now.mDone, now.mTotal)} · Training ${now.tTotal ? `${now.tDone}/${now.tTotal}` : '–'}` : rows.length ? `${rows.length} Wochen` : 'Keine Daten',
+    pct: now && now.mTotal ? (now.mDone / now.mTotal) * 100 : null,
+    autoOpen: false,
+  },
+  rows.length
       ? h('div.ctable',
         h('div.crow.chead', h('span', 'KW'), h('span', 'Mahlzeiten'), h('span', 'Training'), h('span', 'Wasser')),
         rows.map(({ m, c }) => h(`div.crow${m.getTime() === cur.getTime() ? '.now' : ''}`,
@@ -911,7 +900,6 @@ function importView() {
       h('div.buttons',
         h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_MEALS) }, 'Essensplan'),
         h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_TRAINING) }, 'Trainingsplan'),
-        h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_RECIPES) }, 'Rezepte'),
       ),
     ),
   );
@@ -937,16 +925,6 @@ function planPreview(plan) {
     dayIsToday = true;
     location.hash = target;
   };
-
-  if (plan.typ === 'rezepte') {
-    const replaces = body.recipes(plan.monday).length > 0;
-    return h('section.card',
-      h('p.label', `Rezepte · ${range}`),
-      h('div.preview', plan.rezepte.map((r) => h('div.prow', h('b', r.prep_tag || '–'), h('span.muted', `${r.name} · ${r.portionen || '?'} Portionen · ${r.zutaten.length} Zutaten`)))),
-      replaces && h('p.small.muted', 'Ersetzt die Rezepte dieser Woche.'),
-      h('button.btn.primary.full', { onclick: () => { weekOffset = Math.round((plan.monday - weekStart()) / (7 * 86400000)); done('Rezepte', '#/koerper/woche'); } }, 'Übernehmen'),
-    );
-  }
 
   const isMeals = plan.typ === 'essen';
   const existing = plan.days.some((items, i) => {
