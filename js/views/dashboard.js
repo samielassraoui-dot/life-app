@@ -69,7 +69,6 @@ function historyCard(refresh) {
     h('button.sec-title.sec-toggle', { onclick: toggle, 'aria-expanded': histOpen },
       h('span.sec-icon', icon('chart', 18)), h('h2', 'Deine Wochen'), h('span.chev', icon('back', 18))),
     histOpen && [
-      h('p.small.muted', `Deine Bewertung (1–10) der letzten ${histWeeks} Wochen. Antippen zeigt die Woche.`),
       AREAS.map((a) => {
         const vals = hist.map((x) => ({ label: `KW ${isoWeek(x.monday)}`, v: x.ratings[a.id] ?? null }));
         const last = [...vals].reverse().find((v) => v.v != null);
@@ -121,7 +120,7 @@ function nextUp(today) {
     ),
     bdays.map(({ p, b }) => h('a.nu-row.a-contact', { href: `#/contact/p-${p.id}` },
       h('span.time', icon('cake', 22)),
-      h('span', h('b', `${p.name} hat ${b.inDays === 0 ? 'heute' : 'morgen'} Geburtstag`), h('span.small.muted.block', b.age ? `wird ${b.age}` : 'Vielleicht magst du gratulieren.')),
+      h('span', h('b', `${p.name} hat ${b.inDays === 0 ? 'heute' : 'morgen'} Geburtstag`), b.age && h('span.small.muted.block', `wird ${b.age}`)),
     )),
   );
 }
@@ -158,7 +157,7 @@ export function render(refresh) {
         return h(`a.card.area.a-${a.id}`, { href: `#/${a.id}` },
           h('div.area-top', h('span.area-icon', icon(a.id, 20)), h('span.area-name', a.tab)),
           pct == null
-            ? h('p.small.muted', a.ready ? 'Noch keine Daten' : `ab Stufe ${a.stage}`)
+            ? h('p.small.muted', a.ready ? 'Keine Daten' : `ab Stufe ${a.stage}`)
             : h('p.area-pct', pct, h('small', '%'), h('span.small.muted.block', 'diese Woche')),
           h('div.bar', h('i', { style: { width: `${pct || 0}%` } })),
         );
@@ -172,7 +171,6 @@ export function render(refresh) {
       h('span.review-icon', icon('sync', 22)),
       h('div',
         h('p.label', 'Sync einrichten'),
-        h('p.muted', 'Damit iPhone und Mac dieselben Daten haben.'),
       ),
     ),
   );

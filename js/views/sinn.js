@@ -80,7 +80,7 @@ function meditationCard(refresh) {
       },
     },
     h('span.box', icon('check', 20)),
-    h('span.check-name', h('b', 'Meditiert'), h('span.small.muted.block', done ? 'Gut gemacht – ganz ohne Druck.' : 'Ein paar Minuten Stille zählen schon.')),
+    h('span.check-name', h('b', 'Meditiert')),
     h('span.sec-icon', icon('sinn', 18))),
   );
 }
@@ -89,7 +89,7 @@ function meditationCard(refresh) {
 
 function affirmationCard(refresh) {
   if (editAff) {
-    const input = h('input.input', { placeholder: 'Neue Affirmation, z. B. Ich bin stolz auf mich.', enterkeyhint: 'done', onkeydown: (e) => e.key === 'Enter' && add() });
+    const input = h('input.input', { placeholder: 'Neue Affirmation', enterkeyhint: 'done', onkeydown: (e) => e.key === 'Enter' && add() });
     const add = () => {
       if (!input.value.trim()) return;
       mind.addAffirmation(input.value.trim());
@@ -116,7 +116,7 @@ function affirmationCard(refresh) {
   const read = mind.affirmationRead(day);
   return h('section.card.aff-card',
     secTitle('sparkle', 'Affirmation des Tages', h('button.link', { onclick: () => { editAff = true; refresh(); } }, 'Verwalten')),
-    a ? h('blockquote.aff', a.text) : h('p.muted', 'Noch keine Affirmationen. Tippe auf „Verwalten“.'),
+    a ? h('blockquote.aff', a.text) : h('p.muted', 'Keine Affirmationen'),
     a && h('div.buttons.split',
       h(`button.btn${read ? '.done-btn' : '.primary'}`, {
         onclick: () => {
@@ -158,7 +158,7 @@ function moodCard(refresh) {
 function journalCard(refresh) {
   const qs = mind.questions();
   if (editQ) {
-    const input = h('input.input', { placeholder: 'Neue Frage, z. B. Was hat mir heute Kraft gegeben?', enterkeyhint: 'done', onkeydown: (e) => e.key === 'Enter' && add() });
+    const input = h('input.input', { placeholder: 'Neue Frage', enterkeyhint: 'done', onkeydown: (e) => e.key === 'Enter' && add() });
     const add = () => {
       if (!input.value.trim()) return;
       mind.addQuestion(input.value.trim());
@@ -183,12 +183,10 @@ function journalCard(refresh) {
 
   return h('section.card',
     secTitle('pen', 'Journal', h('button.link', { onclick: () => { editQ = true; refresh(); } }, 'Fragen')),
-    h('p.small.muted', 'Kurz und ehrlich – jede Antwort ist freiwillig.'),
     qs.map((q) => {
       let timer;
       const ta = h('textarea.input.journal', {
         rows: 2,
-        placeholder: 'Ein paar Worte …',
         value: mind.answer(day, q.id),
         // Speichert beim Tippen (kurz verzögert) und beim Verlassen des Feldes.
         oninput: (e) => {

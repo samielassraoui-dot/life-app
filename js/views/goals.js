@@ -7,7 +7,7 @@ export function goalEditor(monday, area, refresh, suggestions = []) {
   const list = week.goals(monday, area);
   const full = list.length >= week.MAX_GOALS;
   const input = h('input.input', {
-    placeholder: list.length ? 'Weiteres Ziel …' : 'z. B. 4× Training',
+    placeholder: 'Neues Ziel',
     enterkeyhint: 'done',
     onkeydown: (e) => e.key === 'Enter' && add(),
   });
@@ -40,6 +40,5 @@ export function goalEditor(monday, area, refresh, suggestions = []) {
         },
       }, `↻ ${s}`))),
     ),
-    full && h('p.small.muted', 'Drei Ziele sind genug – weniger ist oft mehr.'),
   );
 }

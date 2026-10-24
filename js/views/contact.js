@@ -117,7 +117,7 @@ function openSheet(p, refresh, preset = {}) {
   const date = h('input.input', { type: 'date', value: iso() });
   const time = h('input.input', { type: 'time' });
   const timeField = h('label.field', h('span', 'Uhrzeit (optional)'), time);
-  const note = h('textarea.input', { rows: 3, placeholder: 'Notiz (optional) – worüber habt ihr gesprochen?' });
+  const note = h('textarea.input', { rows: 3, 'aria-label': 'Notiz' });
   const err = h('p.error');
   const chips = h('div.sheet-kinds', { style: { gridTemplateColumns: `repeat(${kinds.length > 4 ? 3 : 4}, 1fr)` } });
   const paint = () => {
@@ -407,13 +407,13 @@ function mapTab(refresh) {
   return [
     h('section.card.circle-card',
       h('div.ch-head',
-        h('div', h('h2', 'Dein Kreis'), h('p.small.muted', list.length ? 'Ziehen zum Verschieben · Tippen zum Öffnen' : 'Füge die Menschen hinzu, die dir wichtig sind.')),
+        h('div', h('h2', 'Dein Kreis'), null),
         h('a.addbtn', { href: '#/contact/neu', 'aria-label': 'Person hinzufügen' }, icon('plus', 22)),
       ),
       h('div.circle-wrap', circle(list, refresh)),
     ),
     box('menschen', 'contact', 'Deine Menschen', list.length, [
-      !list.length && h('p.muted', 'Noch niemand eingetragen. Fang mit Mama und Papa an – oben auf + tippen.'),
+      !list.length && h('p.muted', 'Keine Personen'),
       RINGS.map((n) => {
         const inRing = list.filter((p) => pp.ringOf(p) === n);
         if (!inRing.length) return null;
@@ -475,11 +475,10 @@ function weekTab(refresh) {
       ),
       bdays.length > 0 && h('p.wh-bday', icon('cake', 16), bdays.map(({ p, b }) => `${p.name} ${b.inDays === 0 ? 'heute' : b.inDays === 1 ? 'morgen' : `in ${b.inDays} Tagen`}`).join(' · ')),
     ),
-    (due.length > 0 || planned.length > 0) && h('p.small.muted.swipe-hint', '→ Nach rechts wischen trägt den Standardkontakt für heute ein.'),
-    group('due', 'heart', 'Fällig', dueRows, refresh, 'Niemand ist fällig – schön!'),
-    group('planned', 'calendar', 'Geplant', planRows, refresh, 'Nichts geplant. Über „Eintragen“ → „Planen“ legst du etwas fest.',
+    group('due', 'heart', 'Fällig', dueRows, refresh, 'Keine Einträge'),
+    group('planned', 'calendar', 'Geplant', planRows, refresh, 'Keine Einträge',
       planned.length > 0 && h('button.btn.ghost.sm.cal-all', { onclick: () => toCalendar(planned.map(({ p, s }) => ({ p, plan: s.plan }))) }, icon('calendar', 16), 'Alle in Apple Kalender')),
-    group('done', 'check', 'Erledigt', doneRows, refresh, 'Diese Woche noch kein Kontakt eingetragen.'),
+    group('done', 'check', 'Erledigt', doneRows, refresh, 'Keine Einträge'),
   ];
 }
 
@@ -570,9 +569,8 @@ function reviewTab(refresh) {
         ),
         trendChart(rows),
       ]
-      : h('p.small.muted', 'Sobald du Kontakte einträgst, entsteht hier dein Verlauf.'), refresh),
+      : h('p.small.muted', 'Keine Daten'), refresh),
     box('reach', 'heart', 'Melde dich mal wieder', reach.length, [
-      h('p.small.muted', 'Nach deinem eigenen Rhythmus ist es hier schon eine Weile her – ganz ohne Druck.'),
       reach.length
         ? h('div.plist', reach.map(({ p, s }) => h('button.pline', { onclick: () => goPerson(p.id) },
           avatar(p),
@@ -588,7 +586,7 @@ function reviewTab(refresh) {
       h('div.bar', h('i', { style: { width: `${r.total ? (r.ok / r.total) * 100 : 0}%` } })),
     )), refresh),
     box('tagebuch', 'pen', 'Kontakt-Tagebuch', log.length || null, [
-      !groups.length && h('p.muted', `Keine Kontakte in den letzten ${logWeeks} Wochen eingetragen.`),
+      !groups.length && h('p.muted', 'Keine Einträge'),
       groups.map((g) => {
         const o = openWeeks.has(g.m);
         return h(`div.tl-week${o ? '.open' : ''}`,
@@ -650,7 +648,7 @@ function personView(id, refresh) {
     p.notes && h('section.card', secTitle('pen', 'Notizen'), h('p.notes', p.notes)),
     h('section.card',
       secTitle('list', 'Letzte Kontakte'),
-      !list.length && h('p.small.muted', 'Noch keine eingetragen.'),
+      !list.length && h('p.small.muted', 'Keine Einträge'),
       list.length > 0 && h('div.timeline', list.map((c) => h('div.tl-item',
         h(`span.tl-dot.rg-${pp.ringOf(p)}`, icon(pp.KINDS[c.art].icon, 13)),
         h('div.tl-body',
@@ -684,9 +682,9 @@ function editForm(p, refresh) {
   let artTouched = !!p;
   let rhythm = p ? (p.rhythm ?? 0) : pp.RING_RHYTHM[ring];
   let rhythmTouched = !!p;
-  const name = h('input.input', { placeholder: 'Name', value: p?.name || '', autocapitalize: 'words' });
-  const bday = h('input.input', { placeholder: 'z. B. 14.3. oder 14.3.1995', inputmode: 'numeric', value: p?.birthday ? pp.birthdayText(p.birthday) : '' });
-  const notes = h('textarea.input', { rows: 3, placeholder: 'Was dir wichtig ist: Interessen, Kinder, letzte Themen …', value: p?.notes || '' });
+  const name = h('input.input', { value: p?.name || '', autocapitalize: 'words' });
+  const bday = h('input.input', { inputmode: 'numeric', value: p?.birthday ? pp.birthdayText(p.birthday) : '' });
+  const notes = h('textarea.input', { rows: 3, value: p?.notes || '' });
   const custom = h('input.input.days', {
     inputmode: 'numeric',
     placeholder: 'eigene',
@@ -702,7 +700,6 @@ function editForm(p, refresh) {
   const ringBox = h('div.segs.wrap');
   const artBox = h('div.chips');
   const prioBox = h('div.segs');
-  const prioHint = h('p.small.muted');
   const rhythmBox = h('div.chips');
   const paint = (syncCustom = true) => {
     ringBox.replaceChildren(...RINGS.map((n) => h(`button.seg${ring === n ? '.on' : ''}`, {
@@ -715,7 +712,6 @@ function editForm(p, refresh) {
     }, n === 0 ? `♥ ${pp.ringName(0)}` : `${n} · ${pp.ringName(n)}`)));
     artBox.replaceChildren(...Object.entries(pp.KINDS).map(([id, k]) => h(`button.chip${art === id ? '.on' : ''}`, { onclick: () => { art = id; artTouched = true; paint(); } }, k.name)));
     prioBox.replaceChildren(...pp.PRIOS.map((x) => h(`button.seg${prio === x.id ? '.on' : ''}`, { onclick: () => { prio = x.id; paint(); } }, x.name)));
-    prioHint.textContent = pp.PRIOS.find((x) => x.id === prio).hint;
     rhythmBox.replaceChildren(...pp.RHYTHMS.map((r) => h(`button.chip${rhythm === r.days ? '.on' : ''}`, {
       onclick: () => {
         rhythm = r.days;
@@ -731,12 +727,12 @@ function editForm(p, refresh) {
   return h('section.card',
     p && secTitle('settings', 'Bearbeiten'),
     h('label.field', h('span', 'Name'), name),
-    h('div.field', h('span', 'Ring – wie nah steht ihr euch?'), ringBox),
+    h('div.field', h('span', 'Ring'), ringBox),
     h('div.field', h('span', 'Wie oft?'), rhythmBox,
       h('div.daysrow', h('span.small.muted', 'oder alle'), custom, h('span.small.muted', 'Tage'))),
-    h('div.field', h('span', 'Standardkontakt'), artBox, h('p.small.muted', 'Wird eingetragen, wenn du in „Diese Woche“ nach rechts wischst – z. B. Telefoniert für die Eltern, Date Night für deinen Partner.')),
-    h('div.field', h('span', 'Priorität'), prioBox, prioHint),
-    h('label.field', h('span', 'Geburtstag (Jahr optional)'), bday),
+    h('div.field', h('span', 'Standardkontakt'), artBox),
+    h('div.field', h('span', 'Priorität'), prioBox),
+    h('label.field', h('span', 'Geburtstag'), bday),
     h('label.field', h('span', 'Notizen'), notes),
     h('div.buttons',
       h('button.btn.primary', {
@@ -769,7 +765,6 @@ function ringsView() {
     back(),
     h('header.hero', h('h1', 'Deine Ringe')),
     h('section.card',
-      h('p.muted', 'Ring 1 ist dir am nächsten. Gib den Ringen Namen, die für dich passen.'),
       inputs.map(({ n, el }) => h('label.field', h('span', n === 0 ? 'Mitte (bei dir)' : `Ring ${n}`), el)),
       h('div.buttons', h('button.btn.primary', {
         onclick: () => {

@@ -17,7 +17,7 @@ import { seedDefaults } from './body.js';
 
 const TABS = [{ id: 'heute', tab: 'Heute', icon: 'home' }, ...AREAS.map((a) => ({ id: a.id, tab: a.tab, icon: a.id }))];
 
-let main, tabbar, syncBtn;
+let main, tabbar, syncBtn, gearBtn;
 
 function route() {
   const [r, sub] = location.hash.replace(/^#\/?/, '').split('/');
@@ -42,14 +42,17 @@ function render() {
   lastRoute = `${r}/${sub}`;
   main.replaceChildren(view);
   document.body.dataset.area = r;
+  gearBtn.hidden = r !== 'koerper' || ['import', 'ziele'].includes(sub);
   for (const a of tabbar.querySelectorAll('a')) a.classList.toggle('active', a.dataset.id === r || (a.dataset.id === 'heute' && ['review', 'woche'].includes(r)));
 }
 
 function shell() {
   syncBtn = h('button.iconbtn', { 'aria-label': 'Jetzt synchronisieren', onclick: manualSync }, icon('sync', 22));
+  // Zahnrad für Körper (Import, Kalender, Ziele, Routinen) – nur im Bereich Körper sichtbar
+  gearBtn = h('button.iconbtn.areagear', { 'aria-label': 'Einstellungen Körper', hidden: true, onclick: () => koerper.openMenu(render) }, icon('gear', 22));
   const top = h('header.topbar',
     h('a.brand', { href: '#/heute' }, h('span.logo'), '4 Bereiche'),
-    h('div.row', syncBtn, h('a.iconbtn', { href: '#/einstellungen', 'aria-label': 'Einstellungen' }, icon('settings', 22))),
+    h('div.row', gearBtn, syncBtn, h('a.iconbtn', { href: '#/einstellungen', 'aria-label': 'Einstellungen' }, icon('settings', 22))),
   );
   main = h('main', { id: 'main' });
   tabbar = h('nav.tabbar',

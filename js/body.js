@@ -14,6 +14,8 @@
 //   weight:<datum>          Morgengewicht in kg
 //   water:<datum>           getrunkene Menge in ml
 //   settings.body.water     {goal: Liter, glass: Liter}
+//   recipes:<montag>        Meal-Prep-Rezepte der Woche [{name, prep_tag, portionen, haltbarkeit, zutaten:[{name, gramm}]}]
+//   measure:<datum>         Umfänge in cm {taille, brust, arme}
 
 import * as store from './store.js';
 import { iso, fromIso, addDays, weekStart, uid, pastDays } from './ui.js';
@@ -115,6 +117,19 @@ export function totals(date) {
     add(planned, e);
   }
   return { eaten, planned };
+}
+
+// Plausibilität: weichen die kcal mehr als 15 % von P*4 + KH*4 + F*9 ab?
+// Ohne Makroangaben wird nicht geprüft.
+export function kcalMismatch(m) {
+  const p = Number(m.protein) || 0;
+  const k = Number(m.kh) || 0;
+  const f = Number(m.fett) || 0;
+  const kcal = Number(m.kcal) || 0;
+  if (!p && !k && !f) return false;
+  const calc = p * 4 + k * 4 + f * 9;
+  if (!kcal) return calc > 0;
+  return Math.abs(kcal - calc) / kcal > 0.15;
 }
 
 // Nächste offene Mahlzeit des Tages (für Startseite).
@@ -318,6 +333,31 @@ export function weekAvg(monday) {
   return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
 }
 
+// ---------- Umfänge ----------
+
+export const MEASURES = [
+  { id: 'taille', name: 'Taille' },
+  { id: 'brust', name: 'Brust' },
+  { id: 'arme', name: 'Arme' },
+];
+
+export function measures() {
+  return store.list('measure:')
+    .map(({ key, v }) => ({ date: key.slice(8), ...v }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function setMeasure(date, data) {
+  const clean = {};
+  for (const m of MEASURES) if (data[m.id] > 0) clean[m.id] = data[m.id];
+  if (Object.keys(clean).length) store.set(`measure:${date}`, clean);
+  else store.del(`measure:${date}`);
+}
+
+// ---------- Meal Prep ----------
+
+export const recipes = (monday) => store.get(`recipes:${iso(monday)}`, []);
+
 // ---------- Fortschritt ----------
 
 // Erledigt / geplant pro Bestandteil – Grundlage für die automatische Zielerreichung.
@@ -346,6 +386,33 @@ export function weekParts(monday) {
     });
   }
   return [m, r, t, w];
+}
+
+// Konsistenz einer Woche für den Rückblick (nur vergangene Tage inkl. heute).
+export function consistency(monday) {
+  const goalMl = waterSettings().goal * 1000;
+  const days = pastDays(monday);
+  let mDone = 0;
+  let mTotal = 0;
+  let tDone = 0;
+  let tTotal = 0;
+  let wDays = 0;
+  let any = false;
+  for (const d of days) {
+    meals(d).forEach((_, i) => {
+      mTotal++;
+      if (mealStatus(d, i) === 'ja') mDone++;
+    });
+    training(d).forEach((x, i) => {
+      if (isRest(x)) return;
+      tTotal++;
+      if (trainingState(d, i) === 'done') tDone++;
+    });
+    const w = water(d);
+    if (w >= goalMl) wDays++;
+    if (w || weight(d) || extras(d).length) any = true;
+  }
+  return { days: days.length, mDone, mTotal, tDone, tTotal, wDays, hasData: any || mTotal > 0 || tTotal > 0 };
 }
 
 // Zahlen für den Wochenexport.
@@ -449,22 +516,35 @@ export function parsePlan(text) {
   } catch {
     throw new Error('Der Plan ist nicht vollständig oder fehlerhaft. Bitte den Code-Block nochmal komplett kopieren.');
   }
+  const typText = String(j.typ || '').toLowerCase();
+  const mondayOf = () => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(j.woche_ab || '')) return weekStart(fromIso(j.woche_ab));
+    const now = new Date();
+    return now.getDay() === 0 ? addDays(weekStart(now), 7) : weekStart(now);
+  };
+  if (typText.includes('rezept') || (!j.tage && Array.isArray(j.rezepte))) {
+    const list = (j.rezepte || []).filter(Boolean).map((r) => ({
+      name: String(r.name || 'Rezept'),
+      prep_tag: String(r.prep_tag || r.prep || ''),
+      portionen: num(r.portionen),
+      haltbarkeit: num(r.haltbarkeit_tage ?? r.haltbarkeit),
+      zutaten: (r.zutaten || []).filter(Boolean).map((z) => (typeof z === 'string'
+        ? { name: z, gramm: 0 }
+        : { name: String(z.name || ''), gramm: num(z.gramm ?? z.menge) })).filter((z) => z.name),
+    }));
+    if (!list.length) throw new Error('Keine Rezepte gefunden.');
+    return { typ: 'rezepte', monday: mondayOf(), rezepte: list };
+  }
   const tage = j.tage || j.days;
   if (!tage || typeof tage !== 'object') throw new Error('Im Plan fehlt der Abschnitt "tage".');
 
-  const typText = String(j.typ || '').toLowerCase();
   const firstVal = Object.values(tage)[0];
   const looksTraining = typText.includes('train')
     || (!typText && firstVal && !Array.isArray(firstVal) && typeof firstVal === 'object')
     || (!typText && Array.isArray(firstVal) && firstVal[0] && 'art' in firstVal[0]);
   const typ = looksTraining ? 'training' : 'essen';
 
-  let monday;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(j.woche_ab || '')) monday = weekStart(fromIso(j.woche_ab));
-  else {
-    const now = new Date();
-    monday = now.getDay() === 0 ? addDays(weekStart(now), 7) : weekStart(now);
-  }
+  const monday = mondayOf();
 
   const days = new Array(7).fill(undefined);
   for (const [key, val] of Object.entries(tage)) {
@@ -480,6 +560,10 @@ export function parsePlan(text) {
 }
 
 export function applyPlan(plan) {
+  if (plan.typ === 'rezepte') {
+    store.set(`recipes:${iso(plan.monday)}`, plan.rezepte);
+    return;
+  }
   plan.days.forEach((items, i) => {
     if (items === undefined) return;
     const d = iso(addDays(plan.monday, i));
@@ -538,6 +622,33 @@ Regeln:
     "Do": [ { "art": "Schwimmen", "details": "30 Min locker" } ],
     "Mi": [ { "art": "Ruhetag", "details": "" } ]
   }
+}
+\`\`\``;
+
+export const TEMPLATE_RECIPES = `Bitte gib mir die Meal-Prep-Rezepte für die kommende Woche zusätzlich als JSON-Code-Block, damit ich sie in meine App importieren kann.
+
+Regeln:
+- "typ" ist immer "rezepte", "woche_ab" ist der Montag der Woche (JJJJ-MM-TT).
+- Pro Rezept: "name", "prep_tag" (Mo–So), "portionen" (Zahl), "haltbarkeit_tage" (Zahl), "zutaten" mit "name" und "gramm" (ganze Zahl, Gesamtmenge für alle Portionen).
+- Keine Kommentare im Code-Block.
+
+\`\`\`json
+{
+  "typ": "rezepte",
+  "woche_ab": "2026-11-02",
+  "rezepte": [
+    {
+      "name": "Hähnchen, Reis, Brokkoli",
+      "prep_tag": "So",
+      "portionen": 4,
+      "haltbarkeit_tage": 4,
+      "zutaten": [
+        { "name": "Hähnchenbrust", "gramm": 800 },
+        { "name": "Basmatireis (roh)", "gramm": 400 },
+        { "name": "Brokkoli", "gramm": 600 }
+      ]
+    }
+  ]
 }
 \`\`\``;
 

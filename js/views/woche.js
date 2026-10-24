@@ -31,7 +31,7 @@ export function render(refresh) {
 
     canReview && h('a.card.review', { href: '#/review' },
       h('span.review-icon', icon('calendar', 22)),
-      h('div', h('p.label', rv.doneAt ? 'Review ansehen' : rv.step ? 'Review fortsetzen' : 'Review starten'), h('p.muted', 'Schritt für Schritt, ca. 10 Minuten')),
+      h('div', h('p.label', rv.doneAt ? 'Review ansehen' : rv.step ? 'Review fortsetzen' : 'Review starten')),
     ),
 
     AREAS.map((a) => {
@@ -69,7 +69,6 @@ export function render(refresh) {
 
     h('section.card',
       h('div.sec-title', h('span.sec-icon', icon('upload', 18)), h('h2', 'Wochenexport')),
-      h('p.muted', 'Zusammenfassung als Text für deine Claude-Projekte.'),
       h('div.buttons',
         h('button.btn.primary', { onclick: () => copy(week.exportText(monday)) }, 'Alles kopieren'),
         h('button.btn.ghost', { onclick: () => copy(week.exportText(monday, 'koerper')) }, 'Nur Körper'),

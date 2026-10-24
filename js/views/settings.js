@@ -16,10 +16,9 @@ export function render(refresh) {
 
 function profile() {
   return h('section.card',
-    h('p.label', 'Wie soll ich dich nennen?'),
+    h('p.label', 'Name'),
     h('input.input', {
       value: store.get('settings.name', ''),
-      placeholder: 'Dein Vorname',
       autocomplete: 'given-name',
       onchange: (e) => {
         store.set('settings.name', e.target.value.trim());
@@ -64,14 +63,13 @@ function syncSection(refresh) {
     );
   }
 
-  const repo = h('input.input', { placeholder: 'benutzername/life-app-daten', autocapitalize: 'off', autocorrect: 'off', spellcheck: false });
-  const token = h('input.input', { type: 'password', placeholder: 'github_pat_…', autocapitalize: 'off', autocomplete: 'off' });
-  const pass = h('input.input', { type: 'password', placeholder: 'Mind. 8 Zeichen, gut merken!', autocomplete: 'new-password' });
+  const repo = h('input.input', { autocapitalize: 'off', autocorrect: 'off', spellcheck: false });
+  const token = h('input.input', { type: 'password', autocapitalize: 'off', autocomplete: 'off' });
+  const pass = h('input.input', { type: 'password', autocomplete: 'new-password' });
   const msg = h('p.error');
 
   return h('section.card',
     h('div.row', h('span.chip-icon', icon('sync', 18)), h('p.label', 'Sync zwischen iPhone und Mac')),
-    h('p.muted', 'Deine Daten werden auf dem Gerät verschlüsselt und in deinem privaten GitHub-Repository abgelegt. Auf beiden Geräten dieselben drei Angaben eintragen.'),
     h('label.field', h('span', 'Repository'), repo),
     h('label.field', h('span', 'Zugangs-Token'), token),
     h('label.field', h('span', 'Sync-Passwort'), pass),
@@ -129,7 +127,6 @@ function backupSection(refresh) {
 
   return h('section.card',
     h('div.row', h('span.chip-icon', icon('download', 18)), h('p.label', 'Backup')),
-    h('p.muted', 'Speichert alle Daten als Datei, z. B. in iCloud Drive. Beim Laden werden neuere Einträge behalten – nichts wird überschrieben.'),
     h('p.small.muted', `Letztes Backup: ${ago(Number(localStorage.getItem('life4.lastBackup')) || null)}`),
     h('div.buttons',
       h('button.btn.primary', { onclick: () => exportBackup().then(refresh) }, icon('download', 18), 'Backup speichern'),

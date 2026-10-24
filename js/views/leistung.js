@@ -118,16 +118,16 @@ function pressable(btn, onTap, onLong) {
 
 function goalSheet(monday, f, refresh) {
   const g = ln.goal(monday, f) || {};
-  const ziel = h('input.input', { value: g.ziel || '', placeholder: 'z. B. Kapitel 4 wiederholen' });
-  const fertig = h('input.input', { value: g.fertig_wenn || '', placeholder: 'z. B. Alle Übungsaufgaben gelöst' });
+  const ziel = h('input.input', { value: g.ziel || '' });
+  const fertig = h('input.input', { value: g.fertig_wenn || '' });
   const einheiten = h('input.input.days', { inputmode: 'numeric', value: g.einheiten || 3 });
-  const schritte = h('textarea.input', { rows: 4, placeholder: 'Ein Schritt pro Zeile', value: (g.schritte || []).map((s) => s.text).join('\n') });
+  const schritte = h('textarea.input', { rows: 4, value: (g.schritte || []).map((s) => s.text).join('\n') });
   const err = h('p.error');
   const sh = sheet(`${ln.fieldName(f)} · KW ${isoWeek(monday)}`,
     h('label.field', h('span', 'Ziel'), ziel),
-    h('label.field', h('span', 'Fertig, wenn … (Pflicht)'), fertig),
+    h('label.field', h('span', 'Fertig, wenn …'), fertig),
     h('div.daysrow', h('span.small.muted', 'Einheiten pro Woche'), einheiten),
-    h('label.field', h('span', 'Teilschritte (optional)'), schritte),
+    h('label.field', h('span', 'Teilschritte'), schritte),
     err,
     h('div.sheet-btns',
       g.ziel && h('button.btn.ghost', {
@@ -181,7 +181,6 @@ function timerSheet(f, refresh) {
     paint();
   });
   const sh = sheet(`Fokus-Timer · ${ln.fieldName(f)}`,
-    h('p.muted', 'Wie lange willst du dich konzentrieren? Die Dauer wird für das nächste Mal gemerkt.'),
     chips,
     h('div.daysrow', h('span.small.muted', 'Eigene Dauer (Minuten)'), custom),
     h('div.sheet-btns',
@@ -239,7 +238,7 @@ function miniRing(mon) {
   const c = 2 * Math.PI * r;
   const pct = planned ? done / planned : 0;
   return h('div.lh-ring',
-    h('span', { html: `<svg viewBox="0 0 38 38"><circle cx="19" cy="19" r="${r}" class="t"/><circle cx="19" cy="19" r="${r}" class="v" stroke-dasharray="${c * pct} ${c}" transform="rotate(-90 19 19)"/></svg>` }),
+    h('span', { html: `<svg viewBox="0 0 38 38"><circle cx="19" cy="19" r="${r}" class="t"/>${pct > 0 ? `<circle cx="19" cy="19" r="${r}" class="v" stroke-dasharray="${c * pct} ${c}" transform="rotate(-90 19 19)"/>` : ''}</svg>` }),
     h('span.lh-ring-text', h('b', planned ? `${done}/${planned}` : '–'), h('span', 'Einheiten')),
   );
 }
@@ -303,7 +302,6 @@ function hero(mon, refresh) {
           },
         }, 'Abbrechen'),
       ),
-      h('p.lh-hint', 'Nach Ablauf wird die Einheit automatisch eingetragen – auch wenn die App zwischendurch zu war.'),
     );
   }
 
@@ -311,7 +309,7 @@ function hero(mon, refresh) {
   if (noteFor && noteWhere === 'hero') {
     const u = ln.allUnits().find((x) => x.key === noteFor);
     if (u) {
-      const input = h('input.input', { placeholder: 'Was habe ich gelernt? (ein Satz)', enterkeyhint: 'done' });
+      const input = h('input.input', { placeholder: 'Was habe ich gelernt?', enterkeyhint: 'done' });
       const save = () => {
         if (input.value.trim()) ln.setNote(noteFor, input.value.trim());
         noteFor = null;
@@ -322,7 +320,6 @@ function hero(mon, refresh) {
       return h('section.l-hero',
         top('Einheit eingetragen'),
         h('p.lh-field', fieldIcon(u.feld, 20), ln.fieldName(u.feld)),
-        h('p.lh-sub', 'Was habe ich gelernt? Ein Satz reicht.'),
         input,
         h('div.lh-btns',
           h('button.lh-btn', { onclick: save }, 'Speichern'),
@@ -338,7 +335,6 @@ function hero(mon, refresh) {
     return h('section.l-hero',
       top(`KW ${isoWeek(mon)}`),
       h('p.lh-title', 'Noch keine Wochenziele'),
-      h('p.lh-sub', 'Setze dir pro Lernfeld ein Ziel – oder importiere deinen Lernplan aus Claude.'),
       h('div.lh-btns',
         h('a.lh-btn', { href: '#/leistung/import' }, icon('upload', 18), 'Lernplan importieren'),
       ),
@@ -352,7 +348,7 @@ function hero(mon, refresh) {
       nav([
         h('span.lh-check', icon('check', 28)),
         h('p.lh-title', 'Woche geschafft'),
-        h('p.lh-sub', 'Alle Wochenziele erfüllt. Alles Weitere ist Bonus.'),
+        h('p.lh-sub', 'Alle Wochenziele erfüllt'),
       ]),
     );
   }
@@ -363,7 +359,7 @@ function hero(mon, refresh) {
   const isDone = ln.fulfilled(mon, cur);
   const min = ln.timerMinutes();
   const timerBtn = pressable(
-    h('button.lh-btn.soft.press', { 'aria-label': `Fokus-Timer ${min} Minuten, lange drücken für andere Dauer` }, icon('play', 16), `${min} Min`),
+    h('button.lh-btn.soft.press', { 'aria-label': `Fokus-Timer ${min} Minuten` }, icon('play', 16), `${min} Min`),
     () => {
       ln.startTimer(cur, min);
       refresh();
@@ -375,7 +371,7 @@ function hero(mon, refresh) {
     top(heroField && heroField !== order[0] ? 'Gewählt' : 'Heute dran'),
     nav([
       h('p.lh-field.big', fieldIcon(cur, 22), ln.fieldName(cur)),
-      h('p.lh-sub', isDone ? 'Wochenziel erfüllt – alles Weitere ist Bonus.' : step ? h('span', 'Nächster Schritt: ', h('b', step.text)) : h('span', 'Ziel: ', h('b', g.ziel))),
+      h('p.lh-sub', isDone ? 'Wochenziel erfüllt' : step ? h('span', 'Nächster Schritt: ', h('b', step.text)) : h('span', 'Ziel: ', h('b', g.ziel))),
       h('p.lh-count', `${n}/${g.einheiten || 0} Einheiten diese Woche`),
     ]),
     h('div.lh-btns',
@@ -389,7 +385,6 @@ function hero(mon, refresh) {
         },
       }, icon('check', 18), 'Erledigt'),
     ),
-    h('p.lh-hint', 'Timer lange drücken = andere Dauer'),
   );
 }
 
@@ -454,7 +449,7 @@ function fieldCard(mon, f, isFokus, refresh) {
   );
 
   const noteBox = noteFor && noteWhere === 'card' && units.find((u) => u.key === noteFor) && (() => {
-    const input = h('input.input', { placeholder: 'Was habe ich gelernt? (ein Satz)', enterkeyhint: 'done' });
+    const input = h('input.input', { placeholder: 'Was habe ich gelernt?', enterkeyhint: 'done' });
     const save = () => {
       if (input.value.trim()) ln.setNote(noteFor, input.value.trim());
       noteFor = null;
@@ -514,8 +509,8 @@ async function exportIcs(list) {
 
 function terminSheet(refresh, t = null) {
   let feld = t?.feld || 'uni';
-  const titel = h('input.input', { value: t?.titel || '', placeholder: 'z. B. Klausur' });
-  const modul = h('input.input', { value: t?.modul || '', placeholder: 'z. B. Statistik (optional)' });
+  const titel = h('input.input', { value: t?.titel || '' });
+  const modul = h('input.input', { value: t?.modul || '' });
   const datum = h('input.input', { type: 'date', value: t?.datum || iso(addDays(new Date(), 14)) });
   const box = h('div.chips');
   const paint = () => box.replaceChildren(...ln.FIELDS.map((f) => h(`button.chip${feld === f.id ? '.on' : ''}`, { onclick: () => { feld = f.id; paint(); } }, f.short)));
@@ -523,7 +518,7 @@ function terminSheet(refresh, t = null) {
   const err = h('p.error');
   const sh = sheet(t ? 'Termin bearbeiten' : 'Neuer Termin',
     h('label.field', h('span', 'Titel'), titel),
-    h('label.field', h('span', 'Modul (optional)'), modul),
+    h('label.field', h('span', 'Modul'), modul),
     h('label.field', h('span', 'Datum'), datum),
     h('div.field', h('span', 'Lernfeld'), box),
     err,
@@ -551,8 +546,6 @@ function termineTab(refresh) {
   const today = iso();
   const upcoming = all.filter((t) => t.datum >= today);
   const past = all.filter((t) => t.datum < today).reverse();
-  const showHelp = upcoming.length > 0 && !ls('life4.terminHelp');
-  if (showHelp) lsSet('life4.terminHelp', '1');
 
   const row = (t) => {
     const since = t.seit || iso(weekStart());
@@ -583,8 +576,7 @@ function termineTab(refresh) {
     fokusBanner(weekStart(), refresh),
     h('section.card',
       secTitle('calendar', 'Anstehend', h('button.link', { onclick: () => terminSheet(refresh) }, '+ Termin')),
-      upcoming.length ? h('div.klist', upcoming.map(row)) : h('p.muted', 'Keine anstehenden Termine. Trag Abgaben und Prüfungen ein – oder importiere sie mit dem Lernplan.'),
-      showHelp && h('p.small.muted', 'Antippen = bearbeiten · nach links wischen = löschen'),
+      upcoming.length ? h('div.klist', upcoming.map(row)) : h('p.muted', 'Keine Termine'),
       upcoming.length > 0 && h('button.btn.ghost.full', { onclick: () => exportIcs(upcoming) }, icon('calendar', 18), 'Alle in Apple Kalender eintragen'),
     ),
     past.length > 0 && collapsible('past', false,
@@ -604,16 +596,7 @@ function reviewTab() {
     const q = journalQuery.trim().toLowerCase();
     const list = notes.filter((u) => (journalField === 'alle' || u.feld === journalField) && (!q || u.notiz.toLowerCase().includes(q)));
     if (!notes.length) {
-      journalList.replaceChildren(
-        h('div.tl-item.example',
-          h('span.tl-dot.lf-dot', icon('pen', 13)),
-          h('div.tl-body',
-            h('div.tl-top', fieldTag('sap'), h('span.small.muted', 'Beispiel')),
-            h('p.tl-note', 'Zeitarten werden in der Tabelle V_T554S gepflegt – die Zeitbewertung greift erst danach.'),
-          ),
-        ),
-        h('p.small.muted', 'So sieht ein Eintrag aus. Nach „Erledigt“ kannst du festhalten, was du gelernt hast – ein Satz reicht.'),
-      );
+      journalList.replaceChildren(h('p.muted', 'Keine Einträge'));
       return;
     }
     journalList.replaceChildren(...(list.length
@@ -624,12 +607,12 @@ function reviewTab() {
           h('p.tl-note', u.notiz),
         ),
       ))
-      : [h('p.muted', 'Keine passenden Einträge.')]));
+      : [h('p.muted', 'Keine Einträge')]));
   };
   paintJournal();
   const search = notes.length > 0 && h('input.input', {
     type: 'search',
-    placeholder: 'Suchen …',
+    placeholder: 'Suchen',
     value: journalQuery,
     oninput: (e) => {
       journalQuery = e.target.value;
@@ -661,7 +644,7 @@ function reviewTab() {
           )),
           h('div.slegend', h('span', h('span.sdot2.st-erreicht'), 'erreicht'), h('span', h('span.sdot2.st-teilweise'), 'teilweise'), h('span', h('span.sdot2.st-nicht'), 'nicht erreicht'), h('span', h('span.sdot2.st-offen'), 'läuft')),
         ]
-        : h('p.muted', 'Noch keine Wochenziele. Nach deiner ersten Woche siehst du hier pro Feld, wie es gelaufen ist.'),
+        : h('p.muted', 'Keine Daten'),
     ),
     h('section.card',
       secTitle('pen', 'Lernjournal', notes.length > 0 && h('span.count', notes.length)),
@@ -675,7 +658,7 @@ function reviewTab() {
 // ---------- Lernplan importieren ----------
 
 function importView() {
-  const area = h('textarea.input.paste', { placeholder: 'Lernplan aus dem Claude-Chat hier einfügen …', rows: 6 });
+  const area = h('textarea.input.paste', { rows: 6, 'aria-label': 'Lernplan' });
   const msg = h('p.error');
   const preview = h('div');
 
@@ -685,8 +668,8 @@ function importView() {
     pendingPlan = null;
     if (!ln.isLernplan(area.value)) {
       msg.textContent = area.value.trim()
-        ? 'Das ist kein Lernplan („typ": „lernplan" fehlt). Essens- und Trainingspläne importierst du unter Körper.'
-        : 'Bitte zuerst den Lernplan einfügen.';
+        ? 'Kein Lernplan erkannt.'
+        : 'Kein Lernplan eingefügt.';
       return;
     }
     try {
@@ -702,8 +685,7 @@ function importView() {
     h('a.backlink', { href: '#/leistung/woche' }, icon('back', 18), 'Leistung'),
     h('header.hero', h('h1', 'Lernplan importieren')),
     h('section.card',
-      h('p.muted', 'Kopiere den Code-Block aus deinem Claude-Chat und füge ihn hier ein.'),
-      area,
+      h('label.field', h('span', 'Lernplan'), area),
       msg,
       h('div.buttons',
         h('button.btn.ghost', {
@@ -721,8 +703,7 @@ function importView() {
     ),
     preview,
     h('section.card',
-      h('p.label', 'Vorlage für deinen Claude-Chat'),
-      h('p.muted', 'Lege diesen Text in deinem Lern-Projekt als Anweisung ab. Dann kommt der Plan jeden Sonntag direkt im passenden Format.'),
+      h('p.label', 'Vorlage'),
       h('button.btn.ghost.full', {
         onclick: async () => {
           try {
@@ -749,7 +730,7 @@ function lernplanPreview(plan) {
       }),
       plan.termine.map((t) => h('div.prow', h('b', fmtShort(fromIso(t.datum))), h('span.muted', `${ln.terminTitle(t)} (${ln.fieldName(t.feld)})`))),
     ),
-    replaces && h('p.small.muted', 'Für einige Felder gibt es schon ein Ziel – es wird ersetzt.'),
+    replaces && h('p.small.muted', 'Ersetzt vorhandene Ziele.'),
     h('button.btn.primary.full', {
       onclick: () => {
         ln.applyLernplan(plan);
@@ -776,12 +757,12 @@ function reviewView(refresh) {
       rating: old?.status && old.status !== 'offen' ? old.status : ln.suggestStatus(mon, f.id),
       mode: existing ? 'new' : old ? 'keep' : 'drop',
     };
-    const ziel = h('input.input', { value: existing?.ziel || '', placeholder: 'Neues Ziel' });
-    const fertig = h('input.input', { value: existing?.fertig_wenn || '', placeholder: 'Fertig, wenn … (Pflicht)' });
+    const ziel = h('input.input', { value: existing?.ziel || '' });
+    const fertig = h('input.input', { value: existing?.fertig_wenn || '' });
     const einheiten = h('input.input.days', { inputmode: 'numeric', value: existing?.einheiten ?? old?.einheiten ?? 3 });
-    const schritte = h('textarea.input', { rows: 3, placeholder: 'Teilschritte, einer pro Zeile (optional)', value: (existing?.schritte || []).map((s) => s.text).join('\n') });
+    const schritte = h('textarea.input', { rows: 3, value: (existing?.schritte || []).map((s) => s.text).join('\n') });
     d.read = () => ({ ziel: ziel.value.trim(), fertig_wenn: fertig.value.trim(), einheiten: Math.max(0, parseInt(einheiten.value, 10) || 0), schritte: schritte.value.split('\n').map((t) => t.trim()).filter(Boolean).map((text) => ({ text, done: false })) });
-    const form = h('div.form.rv-form', ziel, fertig, h('div.daysrow', h('span.small.muted', 'Einheiten pro Woche'), einheiten), schritte);
+    const form = h('div.form.rv-form', h('label.field', h('span', 'Ziel'), ziel), h('label.field', h('span', 'Fertig, wenn …'), fertig), h('div.daysrow', h('span.small.muted', 'Einheiten pro Woche'), einheiten), h('label.field', h('span', 'Teilschritte'), schritte));
     const ratingBox = h('div.segs');
     const modeBox = h('div.segs');
     const paint = () => {
@@ -816,7 +797,6 @@ function reviewView(refresh) {
   return h('div.view.a-leistung.lview',
     h('a.backlink', { href: '#/leistung/woche' }, icon('back', 18), 'Leistung'),
     h('header.hero', h('p.eyebrow', `Wochen-Review · KW ${isoWeek(mon)} → KW ${isoWeek(next)}`), h('h1', 'Lernziele')),
-    h('p.muted.rv-intro', 'Bewerte kurz jedes Ziel und entscheide: übernehmen, neu setzen oder streichen. Jedes neue Ziel braucht ein klares „Fertig, wenn …“.'),
     cards,
     h('section.card', secTitle('sparkle', `Fokusfeld KW ${isoWeek(next)}`), fkBox),
     err,

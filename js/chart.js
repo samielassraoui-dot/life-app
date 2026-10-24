@@ -16,14 +16,14 @@ function svg(tag, attrs) {
 const fmt = (v, d = 1) => v.toLocaleString('de-DE', { minimumFractionDigits: d, maximumFractionDigits: d });
 
 // points: [{date:'JJJJ-MM-TT', v:Zahl}], weeks: wie viele Wochen zurück
-export function lineChart(points, { weeks = 8, unit = 'kg', decimals = 1, avg = true, yMin, yMax } = {}) {
+export function lineChart(points, { weeks = 8, unit = 'kg', decimals = 1, avg = true, yMin, yMax, dataWeeksOnly = false } = {}) {
   const end = addDays(weekStart(), 7);
   const start = addDays(end, -7 * weeks);
   const s0 = iso(start);
   const data = points.filter((p) => p.date >= s0).map((p) => ({ ...p, x: fromIso(p.date) }));
   const wrap = h('div.chart');
   if (data.length < 2) {
-    wrap.append(h('p.small.muted', 'Ab zwei Einträgen siehst du hier deinen Verlauf.'));
+    wrap.append(h('p.small.muted', 'Keine Daten'));
     return wrap;
   }
 
@@ -40,7 +40,22 @@ export function lineChart(points, { weeks = 8, unit = 'kg', decimals = 1, avg = 
   let lo = yMin ?? Math.floor(Math.min(...vals) - 0.5);
   let hi = yMax ?? Math.ceil(Math.max(...vals) + 0.5);
   if (hi - lo < 2) hi = lo + 2;
-  const sx = (d) => PAD.l + ((d - start) / (end - start)) * (W - PAD.l - PAD.r);
+  // Optional nur Wochen mit Daten zeigen: leere Wochen werden übersprungen.
+  const used = [];
+  for (let i = 0; i < weeks; i++) {
+    const a = iso(addDays(start, 7 * i));
+    const b = iso(addDays(start, 7 * i + 7));
+    if (data.some((p) => p.date >= a && p.date < b)) used.push(i);
+  }
+  const span = dataWeeksOnly ? used.length : weeks;
+  const pos = (d) => {
+    const days = (d - start) / 86400000;
+    if (!dataWeeksOnly) return days / 7;
+    const wi = Math.floor(days / 7);
+    const k = used.indexOf(wi);
+    return (k < 0 ? 0 : k) + (days - wi * 7) / 7;
+  };
+  const sx = (d) => PAD.l + (pos(d) / span) * (W - PAD.l - PAD.r);
   const sy = (v) => PAD.t + (1 - (v - lo) / (hi - lo)) * (H - PAD.t - PAD.b);
 
   const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'chart-svg', role: 'img', 'aria-label': `Verlauf der letzten ${weeks} Wochen` });
@@ -54,8 +69,10 @@ export function lineChart(points, { weeks = 8, unit = 'kg', decimals = 1, avg = 
     t.textContent = fmt(v, hi - lo < 6 ? 1 : 0);
     root.append(t);
   }
-  for (let i = 0; i < weeks; i += 2) {
-    const d = addDays(start, 7 * i);
+  const labelWeeks = dataWeeksOnly ? used : Array.from({ length: weeks }, (_, i) => i);
+  const every = Math.max(1, Math.ceil(labelWeeks.length / 5));
+  for (let j = 0; j < labelWeeks.length; j += every) {
+    const d = addDays(start, 7 * labelWeeks[j]);
     const t = svg('text', { x: sx(d), y: H - 6, class: 'axis' });
     t.textContent = fmtShort(d);
     root.append(t);
@@ -68,8 +85,8 @@ export function lineChart(points, { weeks = 8, unit = 'kg', decimals = 1, avg = 
   if (avg) for (const p of weekly) root.append(svg('circle', { cx: sx(p.x), cy: sy(p.v), r: 4.5, class: 'avg' }));
 
   // Antippen / Hover: nächster Tageswert
-  const marker = svg('circle', { r: 6, class: 'focus', cx: -20, cy: -20 });
-  const rule = svg('line', { y1: PAD.t, y2: H - PAD.b, x1: -20, x2: -20, class: 'rule' });
+  const marker = svg('circle', { r: 6, class: 'focus', cx: -20, cy: -20, visibility: 'hidden' });
+  const rule = svg('line', { y1: PAD.t, y2: H - PAD.b, x1: -20, x2: -20, class: 'rule', visibility: 'hidden' });
   root.prepend(rule);
   root.append(marker);
   const tip = h('p.chart-tip', ' ');
@@ -79,6 +96,8 @@ export function lineChart(points, { weeks = 8, unit = 'kg', decimals = 1, avg = 
     let best = data[0];
     for (const p of data) if (Math.abs(sx(p.x) - x) < Math.abs(sx(best.x) - x)) best = p;
     const cx = sx(best.x);
+    marker.setAttribute('visibility', 'visible');
+    rule.setAttribute('visibility', 'visible');
     marker.setAttribute('cx', cx);
     marker.setAttribute('cy', sy(best.v));
     rule.setAttribute('x1', cx);
@@ -108,7 +127,7 @@ export function weekChart(points, monday, { unit = 'kg', decimals = 1, refValue 
   const data = days.map((d, i) => ({ i, date: d, v: byDate[d] })).filter((p) => p.v != null);
   const wrap = h('div.chart');
   if (!data.length) {
-    wrap.append(h('p.small.muted.chart-empty', 'Diese Woche noch kein Gewicht eingetragen.'));
+    wrap.append(h('p.small.muted.chart-empty', 'Keine Daten'));
     return wrap;
   }
   const vals = data.map((p) => p.v).concat(refValue != null ? [refValue] : []);
