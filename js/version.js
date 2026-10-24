@@ -1,1 +1,1 @@
-export const VERSION = '1.4.0 · Stufe 4';
+export const VERSION = '1.5.0 · Stufe 5';

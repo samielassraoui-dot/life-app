@@ -1,7 +1,7 @@
 // Service Worker: macht die App offline nutzbar.
 // Strategie: erst Netz (damit Updates sofort ankommen), nach 3 s oder offline aus dem Zwischenspeicher.
 // Wichtig: immer beim Server nachfragen (cache: 'no-cache'), nie alte Dateien aus dem Browser-Cache nehmen.
-const CACHE = 'life4-v7';
+const CACHE = 'life4-v8';
 const FILES = [
   './',
   'index.html',
@@ -16,6 +16,7 @@ const FILES = [
   'js/chart.js',
   'js/week.js',
   'js/mind.js',
+  'js/people.js',
   'js/version.js',
   'js/views/dashboard.js',
   'js/views/area.js',
@@ -25,6 +26,7 @@ const FILES = [
   'js/views/review.js',
   'js/views/woche.js',
   'js/views/sinn.js',
+  'js/views/contact.js',
   'icons/icon-180.png',
   'icons/icon-192.png',
   'icons/icon-512.png',

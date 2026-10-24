@@ -3,6 +3,7 @@ import * as sync from '../sync.js';
 import { AREAS } from '../areas.js';
 import * as body from '../body.js';
 import * as week from '../week.js';
+import * as pp from '../people.js';
 import { sparkline } from '../chart.js';
 import { h, icon, iso, weekDays, isoWeek, fmtLong, WD_SHORT, MONTHS, addDays, weekStart } from '../ui.js';
 
@@ -106,17 +107,22 @@ function nextUp(today) {
   const meal = body.nextMeal(today);
   const nowT = new Date().toTimeString().slice(0, 5);
   const open = body.routines().filter((r) => r.zeit && r.zeit <= nowT && !body.routineDone(today, r.id));
-  if (!meal && !open.length) return null;
-  return h('a.card.next-up.a-koerper', { href: '#/koerper' },
+  const bdays = pp.upcomingBirthdays(1);
+  if (!meal && !open.length && !bdays.length) return null;
+  return h('section.card.next-up.a-koerper',
     h('div.sec-title', h('span.sec-icon', icon('bell', 18)), h('h2', 'Als Nächstes')),
-    meal && h(`div.nu-row.catrow.cat-${body.category(meal)}`,
+    meal && h(`a.nu-row.catrow.cat-${body.category(meal)}`, { href: '#/koerper' },
       h('span.time', meal.zeit || '–'),
       h('span', h('b', meal.name), h('span.small.muted.block', `${body.catName(body.category(meal))} · ${Math.round(meal.kcal)} kcal · ${Math.round(meal.protein)} g Protein`)),
     ),
-    open.length > 0 && h('div.nu-row',
+    open.length > 0 && h('a.nu-row', { href: '#/koerper' },
       h('span.time', open.length),
       h('span', h('b', open.length === 1 ? 'Routine offen' : 'Routinen offen'), h('span.small.muted.block', open.map((r) => r.name).join(', '))),
     ),
+    bdays.map(({ p, b }) => h('a.nu-row.a-contact', { href: `#/contact/p-${p.id}` },
+      h('span.time', icon('cake', 22)),
+      h('span', h('b', `${p.name} hat ${b.inDays === 0 ? 'heute' : 'morgen'} Geburtstag`), h('span.small.muted.block', b.age ? `wird ${b.age}` : 'Vielleicht magst du gratulieren.')),
+    )),
   );
 }
 

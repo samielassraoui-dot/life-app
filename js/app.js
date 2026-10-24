@@ -10,6 +10,7 @@ import * as koerper from './views/koerper.js';
 import * as review from './views/review.js';
 import * as woche from './views/woche.js';
 import * as sinn from './views/sinn.js';
+import * as contact from './views/contact.js';
 import * as mind from './mind.js';
 import { seedDefaults } from './body.js';
 
@@ -29,6 +30,7 @@ function render() {
   if (r === 'einstellungen') view = settings.render(render);
   else if (r === 'koerper') view = koerper.render(sub, render);
   else if (r === 'sinn') view = sinn.render(render);
+  else if (r === 'contact') view = contact.render(sub, render);
   else if (r === 'review') view = review.render(render);
   else if (r === 'woche') view = woche.render(render);
   else if (AREAS.some((a) => a.id === r)) view = area.render(r);

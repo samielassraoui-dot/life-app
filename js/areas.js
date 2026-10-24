@@ -50,6 +50,7 @@ export const AREAS = [
     tab: 'Contact',
     goal: 'Beziehungen bewusst pflegen und meinen Kreis aufbauen',
     stage: 5,
+    ready: true,
     coming: [
       'Dein Kreis: du in der Mitte, Menschen in vier Ringen',
       'Kontaktrhythmus und „Kontakt gehabt“',

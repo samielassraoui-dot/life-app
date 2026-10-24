@@ -7,6 +7,7 @@
 import * as store from './store.js';
 import * as body from './body.js';
 import * as mind from './mind.js';
+import * as pp from './people.js';
 import { AREAS, byId } from './areas.js';
 import { iso, fromIso, addDays, weekStart, isoWeek, fmtShort, uid, WD_SHORT } from './ui.js';
 
@@ -69,7 +70,7 @@ export function reviewMonday(now = new Date()) {
 // Teile pro Bereich (aus den Tagesdaten) + Wochenziele. Jeder Teil zählt gleich viel.
 // withGoals=false für die laufende Woche: Ziele werden erst im Review abgehakt.
 export function areaScore(area, monday, { withGoals = true } = {}) {
-  const PARTS = { koerper: body.weekParts, sinn: mind.weekParts };
+  const PARTS = { koerper: body.weekParts, sinn: mind.weekParts, contact: pp.weekParts };
   const parts = PARTS[area] ? PARTS[area](monday) : [];
   const g = withGoals ? goals(monday, area) : [];
   if (g.length) parts.push({ label: 'Wochenziele', done: g.filter((x) => x.done).length, total: g.length });
@@ -130,6 +131,24 @@ function sinnLines(monday) {
   return lines;
 }
 
+function contactLines(monday) {
+  const lines = [];
+  const seen = pp.weekContacts(monday);
+  if (seen.length) lines.push(`- Kontakte: ${seen.map((x) => `${x.p.name} (${WD_SHORT[fromIso(x.d).getDay()]})`).join(', ')}`);
+  const parts = pp.weekParts(monday);
+  if (parts.length) lines.push(`- Im Rhythmus: ${parts[0].done}/${parts[0].total}`);
+  const all = pp.people();
+  const due = all.filter((p) => pp.status(p).state === 'faellig').map((p) => p.name);
+  if (due.length) lines.push(`- Schon eine Weile her: ${due.join(', ')}`);
+  const gem = all.filter((p) => pp.flag('gemeldet', p.id)).map((p) => p.name);
+  if (gem.length) lines.push(`- Gemeldet bei: ${gem.join(', ')}`);
+  const tr = all.filter((p) => pp.flag('treffen', p.id)).map((p) => p.name);
+  if (tr.length) lines.push(`- Treffen geplant mit: ${tr.join(', ')}`);
+  const bd = pp.upcomingBirthdays(14).map(({ p, b }) => `${p.name} (${fmtShort(b.date)})`);
+  if (bd.length) lines.push(`- Geburtstage in den nächsten 2 Wochen: ${bd.join(', ')}`);
+  return lines;
+}
+
 // only: Bereichs-ID für einen Teil-Export (z. B. nur Körper fürs Body-Projekt)
 export function exportText(monday, only = null) {
   const rv = review(monday);
@@ -142,6 +161,7 @@ export function exportText(monday, only = null) {
     out.push(`${a.name.toUpperCase()}${sc.pct != null ? ` – Zielerreichung ${sc.pct} %` : ''}${rating ? ` · Bewertung ${rating}/10` : ''}`);
     if (a.id === 'koerper') out.push(...koerperLines(monday));
     if (a.id === 'sinn') out.push(...sinnLines(monday));
+    if (a.id === 'contact') out.push(...contactLines(monday));
     out.push(...goalLines(monday, a.id));
     out.push('');
   }
