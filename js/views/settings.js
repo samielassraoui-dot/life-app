@@ -2,6 +2,9 @@ import * as store from '../store.js';
 import * as sync from '../sync.js';
 import { h, icon, toast, ago, iso, saveFile } from '../ui.js';
 import { VERSION } from '../version.js';
+import * as body from '../body.js';
+import * as mind from '../mind.js';
+import * as photos from '../photos.js';
 
 export function render(refresh) {
   return h('div.view',
@@ -170,13 +173,29 @@ function storageSection(refresh) {
       }, 'App aktualisieren'),
       h('button.btn.danger', {
         onclick: async () => {
-          if (!confirm('Wirklich ALLE Daten auf diesem Gerät löschen?')) return;
-          if (!confirm('Sicher? Ohne Backup oder Sync sind sie weg.')) return;
-          await store.clearAll();
-          toast('Daten auf diesem Gerät gelöscht');
+          if (!confirm('Wirklich ALLE Einträge löschen – auf allen Geräten und im Sync?')) return;
+          if (!confirm('Sicher? Ohne Backup sind sie danach weg.')) return;
+          // Löschmarkierungen statt nur lokal leeren: sonst holt der Sync alles wieder zurück.
+          // Einstellungen (Name, Ziele, Wasser) bleiben, Standard-Routinen/-Affirmationen/-Fragen werden neu angelegt.
+          await store.deleteAll(['settings.']);
+          body.restoreDefaults();
+          mind.restoreDefaults();
+          await photos.clearPhotos().catch(() => {});
+          try {
+            localStorage.removeItem('life4.timer');
+          } catch { /* egal */ }
+          if (sync.getConfig()) {
+            toast('Gelöscht – Sync läuft …');
+            try {
+              await sync.sync();
+              toast('Alle Daten gelöscht – auch im Sync');
+            } catch (e) {
+              toast(`Gelöscht. Sync: ${e.message}`, 'error');
+            }
+          } else toast('Alle Daten gelöscht');
           refresh();
         },
-      }, 'Alle Daten auf diesem Gerät löschen'),
+      }, 'Alle Daten löschen'),
     ),
   );
 }

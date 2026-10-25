@@ -46,6 +46,12 @@ export function seedDefaults() {
   DEFAULT_QUESTIONS.forEach(([id, text], o) => store.setDefault(`jq:${id}`, { text, o }));
 }
 
+// Nach „Alle Daten löschen“: Standard-Affirmationen und -Fragen frisch anlegen
+export function restoreDefaults() {
+  for (const [id, text] of DEFAULT_AFFIRMATIONS) store.set(`affirmation:${id}`, { text });
+  DEFAULT_QUESTIONS.forEach(([id, text], o) => store.set(`jq:${id}`, { text, o }));
+}
+
 export function affirmations() {
   return store.list('affirmation:')
     .map(({ key, v }) => ({ id: key.slice(12), ...v }))

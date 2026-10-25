@@ -55,3 +55,4 @@ export async function listPhotos() {
 }
 
 export const deletePhoto = (id) => tx('readwrite', (s) => s.delete(id));
+export const clearPhotos = () => tx('readwrite', (s) => s.clear());

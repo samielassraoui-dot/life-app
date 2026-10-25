@@ -124,6 +124,23 @@ export async function merge(remote) {
   return changed.length;
 }
 
+// Alles löschen – auch auf den anderen Geräten: Jeder Eintrag bekommt eine Lösch-Markierung
+// mit aktuellem Zeitstempel, die per Sync überall gewinnt. Schlüssel mit einem der
+// Präfixe in `keep` bleiben erhalten (z. B. Einstellungen).
+export async function deleteAll(keep = []) {
+  const t = now();
+  const changed = [];
+  for (const [k, r] of mem) {
+    if (r.d || keep.some((p) => k.startsWith(p))) continue;
+    const rec = { d: 1, t };
+    mem.set(k, rec);
+    changed.push([k, rec]);
+  }
+  if (changed.length) await writeMany(changed);
+  emit({ local: true });
+  return changed.length;
+}
+
 export async function clearAll() {
   mem.clear();
   const tx = db.transaction(STORE, 'readwrite');

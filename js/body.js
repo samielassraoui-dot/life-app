@@ -239,6 +239,11 @@ export function seedDefaults() {
   if (store.get('routine:wasser')) store.del('routine:wasser');
 }
 
+// Nach „Alle Daten löschen“: Standard-Routinen frisch anlegen
+export function restoreDefaults() {
+  for (const r of DEFAULT_ROUTINES) store.set(`routine:${r.id}`, { name: r.name, zeit: r.zeit });
+}
+
 // ---------- Wasser ----------
 
 export const WATER_DEFAULTS = { goal: 3.0, glass: 0.5 };
