@@ -15,6 +15,9 @@
 //   water:<datum>           getrunkene Menge in ml
 //   settings.body.water     {goal: Liter, glass: Liter}
 //   measure:<datum>         Umfänge in cm {taille, brust, arme}
+//   shop:<montag>           Einkaufsliste aus dem Essensplan {items:[{key, artikel, menge, einheit, kategorie}], dishes:[{name, portionen, zutaten}]}
+//   shopx:<montag>:<key>    Artikel der Einkaufsliste abgehakt
+//   shopm:<montag>:<id>     eigener Artikel {artikel, menge, einheit, kategorie, done}
 
 import * as store from './store.js';
 import { iso, fromIso, addDays, weekStart, uid, pastDays } from './ui.js';
@@ -520,7 +523,116 @@ function normMeal(m) {
     protein: num(m.protein ?? m.eiweiss),
     kh: num(m.kh ?? m.kohlenhydrate ?? m.carbs),
     fett: num(m.fett ?? m.fat),
+    ...(Array.isArray(m.zutaten) && m.zutaten.length ? { zutaten: m.zutaten.map(normIngredient).filter(Boolean) } : {}),
   };
+}
+
+// ---------- Einkaufsliste ----------
+
+export const SHOP_CATS = [
+  { id: 'obst', name: 'Obst & Gemüse' },
+  { id: 'fleisch', name: 'Fleisch & Fisch' },
+  { id: 'milch', name: 'Milchprodukte & Eier' },
+  { id: 'trocken', name: 'Trockenware' },
+  { id: 'brot', name: 'Brot & Backwaren' },
+  { id: 'vorrat', name: 'Vorrat' },
+  { id: 'getraenke', name: 'Getränke' },
+  { id: 'sonstiges', name: 'Sonstiges' },
+];
+export const SHOP_UNITS = ['g', 'ml', 'Stück'];
+
+export function normShopCat(k) {
+  const a = String(k || '').toLowerCase();
+  if (/obst|gemüse|gemuese|salat|frucht|früchte/.test(a)) return 'obst';
+  if (/fleisch|fisch|geflügel|wurst/.test(a)) return 'fleisch';
+  if (/milch|eier|ei\b|käse|kaese|joghurt|quark/.test(a)) return 'milch';
+  if (/trocken|reis|nudel|pasta|hafer|getreide|hülsen/.test(a)) return 'trocken';
+  if (/brot|back/.test(a)) return 'brot';
+  if (/vorrat|gewürz|öl|konserve|soße|sauce/.test(a)) return 'vorrat';
+  if (/getränk|getraenk|drink/.test(a)) return 'getraenke';
+  return 'sonstiges';
+}
+
+function normUnit(u) {
+  const a = String(u || '').toLowerCase().trim();
+  if (a === 'ml' || a === 'l' || a.startsWith('liter')) return 'ml';
+  if (a.startsWith('st') || a === 'x' || a === 'pcs') return 'Stück';
+  return 'g';
+}
+
+function normIngredient(z) {
+  if (!z) return null;
+  const artikel = String(z.artikel || z.name || '').trim();
+  if (!artikel) return null;
+  let menge = Number(String(z.menge ?? '').replace(',', '.')) || 0;
+  const raw = String(z.einheit || '').toLowerCase().trim();
+  if (raw === 'kg' || raw === 'l') menge *= 1000;
+  return { artikel, menge, einheit: normUnit(raw), kategorie: normShopCat(z.kategorie) };
+}
+
+export const shopKey = (artikel, einheit) => `${artikel.toLowerCase().replace(/[:\s]+/g, ' ').trim()}|${einheit}`;
+
+// Aus dem Essensplan: Portionen pro Gericht = Anzahl der Tage, an denen es vorkommt.
+export function buildShop(plan) {
+  const items = new Map();
+  const dishes = new Map();
+  for (const meals of plan.days) {
+    if (!meals) continue;
+    for (const m of meals) {
+      if (!m.zutaten?.length) continue;
+      const dish = dishes.get(m.name) || { name: m.name, portionen: 0, zutaten: new Map() };
+      dish.portionen++;
+      for (const z of m.zutaten) {
+        const key = shopKey(z.artikel, z.einheit);
+        const it = items.get(key) || { key, artikel: z.artikel, einheit: z.einheit, kategorie: z.kategorie, menge: 0 };
+        it.menge += z.menge;
+        items.set(key, it);
+        const dz = dish.zutaten.get(key) || { key, artikel: z.artikel, einheit: z.einheit, menge: 0 };
+        dz.menge += z.menge;
+        dish.zutaten.set(key, dz);
+      }
+      dishes.set(m.name, dish);
+    }
+  }
+  return {
+    items: [...items.values()],
+    dishes: [...dishes.values()].map((d) => ({ ...d, zutaten: [...d.zutaten.values()] })),
+  };
+}
+
+export const shop = (monday) => store.get(`shop:${iso(monday)}`, null);
+export const shopChecked = (monday, key) => !!store.get(`shopx:${iso(monday)}:${key}`);
+
+export function setShopChecked(monday, key, on) {
+  if (on) store.set(`shopx:${iso(monday)}:${key}`, true);
+  else store.del(`shopx:${iso(monday)}:${key}`);
+}
+
+export function manualItems(monday) {
+  return store.list(`shopm:${iso(monday)}:`).map(({ key, v }) => ({ id: key.split(':')[2], ...v }));
+}
+
+export function saveManual(monday, id, data) {
+  store.set(`shopm:${iso(monday)}:${id || uid()}`, data);
+}
+
+export const deleteManual = (monday, id) => store.del(`shopm:${iso(monday)}:${id}`);
+
+// Neuer Import: Liste ersetzen, Haken zurücksetzen, abgehakte eigene Artikel entfernen
+function replaceShop(plan) {
+  const m = iso(plan.monday);
+  store.set(`shop:${m}`, buildShop(plan));
+  for (const { key } of store.list(`shopx:${m}:`)) store.del(key);
+  for (const it of manualItems(plan.monday)) if (it.done) deleteManual(plan.monday, it.id);
+}
+
+// Anzeige: g/ml auf 10 gerundet, ab 1.000 als kg/L mit einer Nachkommastelle; Stück aufgerundet
+export function fmtAmount(menge, einheit) {
+  if (!menge) return '';
+  if (einheit === 'Stück') return `${Math.ceil(menge - 1e-9)} Stück`;
+  const r = Math.round(menge / 10) * 10 || Math.round(menge);
+  if (r >= 1000) return `${(r / 1000).toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${einheit === 'ml' ? 'L' : 'kg'}`;
+  return `${r.toLocaleString('de-DE')} ${einheit}`;
 }
 
 function normTraining(v) {
@@ -577,6 +689,7 @@ export function parsePlan(text) {
 }
 
 export function applyPlan(plan) {
+  if (plan.typ === 'essen') replaceShop(plan);
   plan.days.forEach((items, i) => {
     if (items === undefined) return;
     const d = iso(addDays(plan.monday, i));
@@ -595,6 +708,9 @@ Regeln:
 - Pro Mahlzeit: zeit (HH:MM), kategorie, name, menge, kcal, protein, kh, fett (Gramm, ganze Zahlen).
 - "kategorie" ist genau eins von: Frühstück, Mittagessen, Snack, Vor dem Training, Abendessen.
 - Shakes und Snacks auch als eigene Mahlzeit.
+- Pro Mahlzeit zusätzlich "zutaten" für die Einkaufsliste: Liste aus { "artikel", "menge" (Zahl, pro Portion), "einheit" ("g", "ml" oder "Stück"), "kategorie" }.
+- "kategorie" der Zutat ist genau eins von: Obst & Gemüse, Fleisch & Fisch, Milchprodukte & Eier, Trockenware, Brot & Backwaren, Vorrat, Getränke, Sonstiges.
+- Gleiche Artikel immer gleich schreiben (z. B. immer "Hähnchenbrust").
 - Keine Kommentare im Code-Block.
 
 \`\`\`json
@@ -604,7 +720,12 @@ Regeln:
   "tage": {
     "Mo-Mi": [
       { "zeit": "07:30", "kategorie": "Frühstück", "name": "Overnight Oats mit Whey", "menge": "1 Box (400 g)", "kcal": 620, "protein": 42, "kh": 78, "fett": 14 },
-      { "zeit": "12:30", "kategorie": "Mittagessen", "name": "Hähnchen, Reis, Brokkoli", "menge": "1 Box (550 g)", "kcal": 780, "protein": 55, "kh": 95, "fett": 18 }
+      { "zeit": "12:30", "kategorie": "Mittagessen", "name": "Hähnchen, Reis, Brokkoli", "menge": "1 Box (550 g)", "kcal": 780, "protein": 55, "kh": 95, "fett": 18,
+        "zutaten": [
+          { "artikel": "Hähnchenbrust", "menge": 200, "einheit": "g", "kategorie": "Fleisch & Fisch" },
+          { "artikel": "Basmatireis", "menge": 100, "einheit": "g", "kategorie": "Trockenware" },
+          { "artikel": "Brokkoli", "menge": 150, "einheit": "g", "kategorie": "Obst & Gemüse" }
+        ] }
     ],
     "Do-So": [
       { "zeit": "07:30", "kategorie": "Frühstück", "name": "Rührei mit Vollkornbrot", "menge": "4 Eier, 2 Scheiben", "kcal": 590, "protein": 36, "kh": 45, "fett": 28 }

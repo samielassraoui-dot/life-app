@@ -20,6 +20,7 @@ let editRoutines = false;
 let editTraining = false;
 let showExtra = false;
 let showTraining = false;
+let showShopAdd = false;
 let weekOffset = 0;        // Reiter Woche: 0 = diese Woche
 let pendingPlan = null;
 let entering = null;       // zuletzt verschobener Eintrag – bekommt eine Einblend-Animation
@@ -681,6 +682,7 @@ function weekTab(refresh) {
     h('div.kdays', dayRows),
     !withPlan && importBtn(),
     ),
+    shopBox(monday, refresh),
     kbox('g:bilanz', 'chart', 'Wochenbilanz', {
       info: wb.plan.kcal || wb.ist.kcal
         ? `${n(wb.ist.kcal)} / ${n(wb.plan.kcal)} kcal · ${wb.inGoal}/${wb.goalDays} Tage im Ziel`
@@ -704,6 +706,132 @@ function weekTab(refresh) {
     ))),
     ),
   ];
+}
+
+// ---------- Einkaufsliste ----------
+
+function shopView() {
+  try {
+    return localStorage.getItem('life4.shopView') || 'kat';
+  } catch {
+    return 'kat';
+  }
+}
+
+function shopBox(monday, refresh) {
+  const data = body.shop(monday);
+  const gen = (data?.items || []).map((it) => ({ ...it, done: body.shopChecked(monday, it.key) }));
+  const man = body.manualItems(monday).map((it) => ({ ...it, key: `m-${it.id}`, manual: true }));
+  const all = [...gen, ...man];
+  const done = all.filter((x) => x.done).length;
+  const mode = shopView();
+
+  const toggle = (it, rowEl) => move(rowEl, it.key, () => {
+    if (it.manual) body.saveManual(monday, it.id, { artikel: it.artikel, menge: it.menge, einheit: it.einheit, kategorie: it.kategorie, done: !it.done });
+    else body.setShopChecked(monday, it.key, !it.done);
+  }, refresh, !it.done);
+
+  // Zeile: Kreis · Artikel ……… Menge; abgehakte unten und leicht transparent
+  const row = (it, amount = it.menge) => {
+    const el = h(`div.ek-row${it.done ? '.done' : ''}${enterCls(it.key)}`,
+      stIcon(it.done ? 'done' : null),
+      h('span.ek-name', it.artikel),
+      h('span.ek-amt', body.fmtAmount(amount, it.einheit)),
+    );
+    if (!it.manual) {
+      el.addEventListener('click', () => toggle(it, el));
+      return el;
+    }
+    return swipeLeft(el, {
+      label: 'Löschen',
+      onTap: () => toggle(it, el),
+      onSwipe: () => {
+        body.deleteManual(monday, it.id);
+        refresh();
+        toast(`„${it.artikel}“ gelöscht`, '', { label: 'Rückgängig', fn: () => { const { id, key, manual, ...d } = it; body.saveManual(monday, id, d); refresh(); } });
+      },
+    });
+  };
+  const sortDone = (list) => [...list].sort((a, b) => a.done - b.done || a.artikel.localeCompare(b.artikel, 'de'));
+
+  const group = (id, title, sub, rows, cnt) => {
+    const head = h('button.ek-head',
+      h('span.ek-title', h('b', title), sub && h('span.small.muted', ` · ${sub}`)),
+      h('span.ek-count', cnt),
+      h('span.ek-chev', icon('back', 16)),
+    );
+    return collapsible(`g:ek-${id}`, true, head, h('div.ek-body', h('div.ek-inner', rows)), 'div.ekgrp');
+  };
+
+  let content;
+  if (!all.length) content = h('p.muted', 'Keine Einkaufsliste');
+  else if (mode === 'kat') {
+    content = body.SHOP_CATS.map((c) => {
+      const list = all.filter((x) => x.kategorie === c.id);
+      if (!list.length) return null;
+      return group(`kat-${c.id}`, c.name, null, sortDone(list).map((it) => row(it)), `${list.filter((x) => x.done).length}/${list.length}`);
+    });
+  } else {
+    const byKey = Object.fromEntries(gen.map((x) => [x.key, x]));
+    content = [
+      ...(data?.dishes || []).map((d) => {
+        const list = d.zutaten.map((z) => ({ ...(byKey[z.key] || z), dishMenge: z.menge }));
+        return group(`dish-${d.name}`, d.name, `${d.portionen} ${d.portionen === 1 ? 'Portion' : 'Portionen'}`,
+          sortDone(list).map((it) => row(it, it.dishMenge)), `${list.filter((x) => x.done).length}/${list.length}`);
+      }),
+      man.length > 0 && group('dish-eigene', 'Eigene Artikel', null, sortDone(man).map((it) => row(it)), `${man.filter((x) => x.done).length}/${man.length}`),
+    ];
+  }
+
+  const seg = (id, label) => h(`button.seg${mode === id ? '.on' : ''}`, {
+    onclick: () => {
+      try {
+        localStorage.setItem('life4.shopView', id);
+      } catch { /* egal */ }
+      refresh();
+    },
+  }, label);
+
+  return kbox('g:einkauf', 'list', 'Einkaufsliste', {
+    info: all.length ? `${done}/${all.length} Artikel` : 'Keine Einkaufsliste',
+    pct: all.length ? (done / all.length) * 100 : null,
+    autoOpen: true,
+  },
+  all.length > 0 && h('div.segs', seg('kat', 'Nach Kategorie'), seg('gericht', 'Nach Gericht')),
+  content,
+  showShopAdd ? shopForm(monday, refresh) : h('button.btn.soft.full', { onclick: () => { showShopAdd = true; refresh(); } }, icon('plus', 18), 'Artikel hinzufügen'),
+  );
+}
+
+function shopForm(monday, refresh) {
+  let einheit = 'g';
+  let kat = 'sonstiges';
+  const artikel = h('input.input');
+  const menge = h('input.input', { inputmode: 'decimal' });
+  const unitBox = h('div.segs');
+  const katBox = h('div.chips');
+  const paint = () => {
+    unitBox.replaceChildren(...body.SHOP_UNITS.map((u) => h(`button.seg${einheit === u ? '.on' : ''}`, { onclick: () => { einheit = u; paint(); } }, u)));
+    katBox.replaceChildren(...body.SHOP_CATS.map((c) => h(`button.chip${kat === c.id ? '.on' : ''}`, { onclick: () => { kat = c.id; paint(); } }, c.name)));
+  };
+  paint();
+  setTimeout(() => artikel.focus(), 60);
+  return h('div.form',
+    h('label.field', h('span', 'Artikel'), artikel),
+    h('div.grid2', h('label.field', h('span', 'Menge'), menge), h('div.field', h('span', 'Einheit'), unitBox)),
+    h('div.field', h('span', 'Kategorie'), katBox),
+    h('div.buttons',
+      h('button.btn.primary', {
+        onclick: () => {
+          if (!artikel.value.trim()) return toast('Artikel fehlt', 'error');
+          body.saveManual(monday, null, { artikel: artikel.value.trim(), menge: parseNum(menge.value), einheit, kategorie: kat, done: false });
+          showShopAdd = false;
+          refresh();
+        },
+      }, 'Speichern'),
+      h('button.btn.ghost', { onclick: () => { showShopAdd = false; refresh(); } }, 'Abbrechen'),
+    ),
+  );
 }
 
 // ---------- Reiter Rückblick ----------
@@ -948,6 +1076,10 @@ function planPreview(plan) {
       }),
     ),
     existing && h('p.small.muted', 'Ersetzt vorhandene Tage.'),
+    isMeals && h('p.small.muted', (() => {
+      const k = body.buildShop(plan).items.length;
+      return k ? `Einkaufsliste: ${k} Artikel` : 'Keine Einkaufsliste';
+    })()),
     h('button.btn.primary.full', { onclick: () => done(isMeals ? 'Essensplan' : 'Trainingsplan', '#/koerper/heute') }, 'Übernehmen'),
   );
 }
