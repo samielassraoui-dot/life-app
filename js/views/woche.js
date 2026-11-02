@@ -72,6 +72,7 @@ export function render(refresh) {
       h('div.buttons',
         h('button.btn.primary', { onclick: () => copy(week.exportText(monday)) }, 'Alles kopieren'),
         h('button.btn.ghost', { onclick: () => copy(week.exportText(monday, 'koerper')) }, 'Nur Körper'),
+        h('button.btn.ghost', { onclick: () => copy(week.coachInstruction()) }, 'Anweisung Körper-Projekt'),
       ),
       h('details.preview-text', h('summary', 'Vorschau'), h('pre', week.exportText(monday))),
     ),

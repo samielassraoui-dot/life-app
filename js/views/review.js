@@ -164,6 +164,7 @@ function stepAbschluss(go) {
       h('div.buttons',
         h('button.btn.primary', { onclick: () => copy(week.exportText(monday), 'Wochenrückblick') }, 'Alles kopieren'),
         h('button.btn.ghost', { onclick: () => copy(week.exportText(monday, 'koerper'), 'Körper-Rückblick') }, 'Nur Körper'),
+        h('button.btn.ghost', { onclick: () => copy(week.coachInstruction(), 'Anweisung') }, 'Anweisung Körper-Projekt'),
       ),
     ),
     h('section.card',

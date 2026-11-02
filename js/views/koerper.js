@@ -5,6 +5,7 @@
 // Dazu: Wochenplan-Import und Ziele.
 import * as body from '../body.js';
 import * as photos from '../photos.js';
+import * as week from '../week.js';
 import { lineChart } from '../chart.js';
 import { h, icon, toast, iso, fromIso, addDays, weekStart, fmtLong, fmtShort, WD_SHORT, saveFile, isoWeek, sheet, swipeLeft } from '../ui.js';
 
@@ -1028,6 +1029,7 @@ function importView() {
       h('div.buttons',
         h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_MEALS) }, 'Essensplan'),
         h('button.btn.ghost', { onclick: () => copy(body.TEMPLATE_TRAINING) }, 'Trainingsplan'),
+        h('button.btn.ghost', { onclick: () => copy(week.coachInstruction()) }, 'Ernährungsberater'),
       ),
     ),
   );

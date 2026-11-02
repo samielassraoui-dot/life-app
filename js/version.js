@@ -1,1 +1,1 @@
-export const VERSION = "1.15.1 · Einkaufsliste";
+export const VERSION = "1.16.0 · Körper-Export";
