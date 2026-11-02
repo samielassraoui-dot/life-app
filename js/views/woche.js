@@ -1,14 +1,16 @@
 // Wochenansicht: jede Woche ansehen – Zielerreichung, Bewertung, Ziele, Reflexion, Export.
 import * as week from '../week.js';
+import * as body from '../body.js';
 import { AREAS } from '../areas.js';
 import { goalEditor } from './goals.js';
 import { h, icon, toast, addDays, weekStart, isoWeek, fmtShort } from '../ui.js';
 
-let monday = weekStart();
+let monday = null;  // beim ersten Öffnen: aktuelle Woche, solange sie noch leer ist die Vorwoche
 let editing = null; // Bereich, dessen Ziele gerade bearbeitet werden
 
 export function render(refresh) {
   const cur = weekStart();
+  if (!monday) monday = body.consistency(cur).hasData ? cur : addDays(cur, -7);
   const go = (n) => {
     monday = addDays(monday, 7 * n);
     editing = null;
