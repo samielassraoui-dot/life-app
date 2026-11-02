@@ -206,7 +206,7 @@ export function coachInstruction() {
 
 Meine Tagesziele (aus der App): ${targetLine()}
 
-Meinen Trainingsplan kennst du aus diesem Projekt. Steht im Rückblick unter „Nächste Woche“ ein Trainingsplan, gilt dieser.
+Meinen Trainingsplan und meine Trainings kennst du aus der Hevy App – nutze sie für die Trainingstage und die Analyse. Steht im Rückblick unter „Nächste Woche“ ein Trainingsplan, gleiche ihn damit ab.
 
 Wenn ich einen Wochenrückblick aus „Sami's World“ einfüge, antworte in dieser Reihenfolge:
 1. Kurzanalyse (höchstens 6 Sätze): Kalorien und Protein gegenüber Ziel, Muster bei ausgelassenen Mahlzeiten (welche, wann, vermuteter Grund), Essen rund ums Training, Gewichtstrend. Richtwert: +0,25 bis 0,5 kg pro Woche – liegt der Trend daneben, schlage eine Anpassung der Tagesziele mit Begründung vor.
